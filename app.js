@@ -9,7 +9,7 @@ const config = {
     lineSpacing: 20,
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
-    ropeDamping: 0.2,  // Damping for bounce control
+    ropeDamping: 0.5,  // Higher damping for smoother rope motion
     letterSize: 45,
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
@@ -201,7 +201,7 @@ function createRopeWithText() {
                 bodyB: segment,
                 length: segmentHeight,
                 stiffness: 1,  // Maximum stiffness - completely rigid
-                damping: 0.2,
+                damping: 0.5,  // Higher damping to prevent twitching
                 render: {
                     strokeStyle: '#a8a8a8',
                     lineWidth: 1.2,
@@ -266,7 +266,7 @@ function createRopeWithText() {
         pointB: { x: 0, y: -cardboardHeight / 2 + 10 },  // Connect near top of cardboard
         length: 15,
         stiffness: 1,  // Completely rigid - no stretch
-        damping: 0.25,
+        damping: 0.5,  // Higher damping for smoother motion
         render: {
             strokeStyle: '#a8a8a8',
             lineWidth: 1.5
@@ -583,33 +583,25 @@ function enforcePositionLimits() {
     // Maximum Y position (screen center-top area)
     const maxY = canvas.height * 0.4;  // 40% down from top = upper-center
 
-    // If cardboard goes too low, force it back up
+    // If cardboard goes too low, apply smooth restoring force instead of hard reset
     if (cardboardBody.position.y > maxY) {
-        Body.setPosition(cardboardBody, {
-            x: cardboardBody.position.x,
-            y: maxY
+        const overshoot = cardboardBody.position.y - maxY;
+
+        // Apply gentle upward force proportional to overshoot (spring-like)
+        const restoreForce = overshoot * 0.001;
+        Body.applyForce(cardboardBody, cardboardBody.position, {
+            x: 0,
+            y: -restoreForce
         });
-        // Reduce downward velocity
+
+        // Smoothly dampen downward velocity
         if (cardboardBody.velocity.y > 0) {
             Body.setVelocity(cardboardBody, {
                 x: cardboardBody.velocity.x,
-                y: cardboardBody.velocity.y * 0.3
+                y: cardboardBody.velocity.y * 0.85  // Gentle damping instead of harsh 0.3
             });
         }
     }
-
-    // Also limit rope segments
-    ropeBodies.forEach((segment, index) => {
-        if (index === 0) return; // Skip pinned segment
-
-        const ropeMaxY = config.startY + config.ropeLength + 50;
-        if (segment.position.y > ropeMaxY) {
-            Body.setPosition(segment, {
-                x: segment.position.x,
-                y: ropeMaxY
-            });
-        }
-    });
 }
 
 // Check if elements are offscreen
