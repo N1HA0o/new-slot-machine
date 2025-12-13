@@ -7,12 +7,12 @@ const config = {
     line2: 'HORIZONTAL',
     letterSpacing: 6,
     lineSpacing: 20,
-    ropeSegments: 35,
-    ropeStiffness: 0.999,  // Almost completely rigid - only 2% stretch
-    ropeDamping: 0.2,
+    ropeSegments: 40,
+    ropeStiffness: 1.0,  // Completely rigid - no stretch
+    ropeDamping: 0.3,
     letterSize: 45,
-    startY: 120,  // Position to hang text in upper-center area
-    ropeLength: 120,
+    startY: -80,  // Rope starts above screen (invisible anchor)
+    ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
     dropAnimationDuration: 1200  // Drop animation duration in ms
 };
 
@@ -155,10 +155,10 @@ function handleOrientation(event) {
 // Create single rope with cardboard at the end
 function createRopeWithText() {
     const centerX = canvas.width / 2;
-    const startY = config.startY;
+    const startY = config.startY;  // Above screen
 
-    // Start position for drop animation (high above screen)
-    const dropStartY = -400;
+    // Start position for drop animation (way above screen for fast drop)
+    const dropStartY = -600;
 
     // Calculate cardboard dimensions
     const cardboardWidth = 340;
@@ -172,10 +172,10 @@ function createRopeWithText() {
 
     for (let i = 0; i < config.ropeSegments; i++) {
         const y = dropStartY + i * segmentHeight;  // Start from drop position
-        const segment = Bodies.circle(centerX, y, 1, {
-            density: 0.00001,  // Ultra light for minimal stretch
-            friction: 0.05,
-            frictionAir: 0.01,
+        const segment = Bodies.circle(centerX, y, 0.8, {
+            density: 0.000001,  // Extremely light to prevent any stretch
+            friction: 0.01,
+            frictionAir: 0.005,
             restitution: 0,
             render: {
                 fillStyle: '#b8b8b8',
@@ -187,13 +187,18 @@ function createRopeWithText() {
         ropeBodies.push(segment);
         Composite.add(engine.world, segment);
 
-        // Connect segments with very stiff constraints to prevent stretching
+        // Set initial downward velocity for all rope segments (except the pinned one)
+        if (i > 0) {
+            Body.setVelocity(segment, { x: 0, y: 15 });  // Fast initial drop
+        }
+
+        // Connect segments with completely rigid constraints (no stretch)
         if (i > 0) {
             const constraint = Constraint.create({
                 bodyA: ropeBodies[i - 1],
                 bodyB: segment,
                 length: segmentHeight,
-                stiffness: config.ropeStiffness,
+                stiffness: 1,  // Maximum stiffness - completely rigid
                 damping: config.ropeDamping,
                 render: {
                     strokeStyle: '#a8a8a8',
@@ -232,9 +237,9 @@ function createRopeWithText() {
         cardboardWidth,
         cardboardHeight,
         {
-            density: 0.002,
+            density: 0.003,
             friction: 0.3,
-            frictionAir: 0.02,
+            frictionAir: 0.015,
             restitution: 0,
             chamfer: { radius: 3 },
             render: {
@@ -245,14 +250,17 @@ function createRopeWithText() {
 
     Composite.add(engine.world, cardboardBody);
 
-    // Connect cardboard to rope end with pendulum-like constraint
+    // Set initial downward velocity for dramatic drop effect
+    Body.setVelocity(cardboardBody, { x: 0, y: 15 });  // Fast downward speed
+
+    // Connect cardboard to rope end with rigid pendulum constraint
     const pendulumConstraint = Constraint.create({
         bodyA: ropeEnd,
         bodyB: cardboardBody,
         pointB: { x: 0, y: -cardboardHeight / 2 + 10 },  // Connect near top of cardboard
         length: 15,
-        stiffness: 1,  // Very stiff
-        damping: 0.3,
+        stiffness: 1,  // Completely rigid
+        damping: 0.4,
         render: {
             strokeStyle: '#a8a8a8',
             lineWidth: 1.5
