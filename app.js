@@ -9,7 +9,7 @@ const config = {
     lineSpacing: 20,
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
-    ropeDamping: 0.15,  // Lower damping for bounce effect
+    ropeDamping: 0.2,  // Damping for bounce control
     letterSize: 45,
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
@@ -63,7 +63,7 @@ function init() {
 
     // Create engine
     engine = Engine.create();
-    engine.gravity.y = 0.8;  // Increase gravity for better catching effect
+    engine.gravity.y = 1;  // Standard gravity
     engine.gravity.x = 0;
 
     // Create renderer
@@ -172,11 +172,12 @@ function createRopeWithText() {
 
     for (let i = 0; i < config.ropeSegments; i++) {
         const y = dropStartY + i * segmentHeight;  // Start from drop position
-        const segment = Bodies.circle(centerX, y, 0.8, {
-            density: 0.0001,  // Increase density so rope can hold the weight
-            friction: 0.05,
-            frictionAir: 0.008,
+        const segment = Bodies.circle(centerX, y, 1, {
+            density: 10,  // Very heavy rope to hold cardboard
+            friction: 0.1,
+            frictionAir: 0.01,
             restitution: 0.3,  // Add bounce for rebound effect
+            inertia: Infinity,  // Prevent rotation
             render: {
                 fillStyle: '#b8b8b8',
                 strokeStyle: '#a0a0a0',
@@ -192,14 +193,14 @@ function createRopeWithText() {
             Body.setVelocity(segment, { x: 0, y: 15 });  // Fast initial drop
         }
 
-        // Connect segments with completely rigid constraints (no stretch)
+        // Connect segments with absolutely rigid constraints (no stretch at all)
         if (i > 0) {
             const constraint = Constraint.create({
                 bodyA: ropeBodies[i - 1],
                 bodyB: segment,
                 length: segmentHeight,
-                stiffness: 1,  // Maximum stiffness - completely rigid
-                damping: 0.15,  // Reduce damping for more visible bounce
+                stiffness: 1,  // Maximum stiffness
+                damping: 0.2,
                 render: {
                     strokeStyle: '#a8a8a8',
                     lineWidth: 1.2,
@@ -237,10 +238,10 @@ function createRopeWithText() {
         cardboardWidth,
         cardboardHeight,
         {
-            density: 0.0045,  // Slightly heavier for better physics
+            density: 0.004,  // Light enough to be held by rope
             friction: 0.3,
-            frictionAir: 0.012,  // Reduce air friction for more swing
-            restitution: 0.2,  // Add bounce for rebound effect
+            frictionAir: 0.015,
+            restitution: 0.25,  // Add bounce for rebound effect
             chamfer: { radius: 3 },
             render: {
                 fillStyle: '#f5f3e8'
@@ -253,14 +254,14 @@ function createRopeWithText() {
     // Set initial downward velocity for dramatic drop effect
     Body.setVelocity(cardboardBody, { x: 0, y: 15 });  // Fast downward speed
 
-    // Connect cardboard to rope end with rigid pendulum constraint
+    // Connect cardboard to rope end with absolutely rigid pendulum constraint
     const pendulumConstraint = Constraint.create({
         bodyA: ropeEnd,
         bodyB: cardboardBody,
         pointB: { x: 0, y: -cardboardHeight / 2 + 10 },  // Connect near top of cardboard
         length: 15,
-        stiffness: 1,  // Completely rigid
-        damping: 0.2,  // Reduce damping for more bounce and swing
+        stiffness: 1,  // Completely rigid - no stretch
+        damping: 0.25,
         render: {
             strokeStyle: '#a8a8a8',
             lineWidth: 1.5
