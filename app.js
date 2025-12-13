@@ -9,7 +9,7 @@ const config = {
     lineSpacing: 20,
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
-    ropeDamping: 0.3,
+    ropeDamping: 0.15,  // Lower damping for bounce effect
     letterSize: 45,
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
@@ -63,7 +63,7 @@ function init() {
 
     // Create engine
     engine = Engine.create();
-    engine.gravity.y = 0.6;
+    engine.gravity.y = 0.8;  // Increase gravity for better catching effect
     engine.gravity.x = 0;
 
     // Create renderer
@@ -129,27 +129,27 @@ function addMotionListeners() {
     window.addEventListener('deviceorientation', handleOrientation);
 }
 
-// Handle device orientation with reduced sensitivity
+// Handle device orientation with medium sensitivity
 function handleOrientation(event) {
     if (isOffscreen) return;
 
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
 
-    // Very smooth transitions for natural movement
-    const smoothFactor = 0.06;
+    // Smooth transitions for natural movement
+    const smoothFactor = 0.1;
     const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
     const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
     lastGamma = smoothGamma;
     lastBeta = smoothBeta;
 
-    // Very low sensitivity for gentle, natural interaction
-    const maxTilt = 75;
-    const gravityStrength = 0.3;
+    // Medium sensitivity for visible swing
+    const maxTilt = 50;
+    const gravityStrength = 0.5;
 
     engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
-    engine.gravity.y = Math.max(0.4, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.4);
+    engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
 }
 
 // Create single rope with cardboard at the end
@@ -173,10 +173,10 @@ function createRopeWithText() {
     for (let i = 0; i < config.ropeSegments; i++) {
         const y = dropStartY + i * segmentHeight;  // Start from drop position
         const segment = Bodies.circle(centerX, y, 0.8, {
-            density: 0.000001,  // Extremely light to prevent any stretch
-            friction: 0.01,
-            frictionAir: 0.005,
-            restitution: 0,
+            density: 0.0001,  // Increase density so rope can hold the weight
+            friction: 0.05,
+            frictionAir: 0.008,
+            restitution: 0.3,  // Add bounce for rebound effect
             render: {
                 fillStyle: '#b8b8b8',
                 strokeStyle: '#a0a0a0',
@@ -199,7 +199,7 @@ function createRopeWithText() {
                 bodyB: segment,
                 length: segmentHeight,
                 stiffness: 1,  // Maximum stiffness - completely rigid
-                damping: config.ropeDamping,
+                damping: 0.15,  // Reduce damping for more visible bounce
                 render: {
                     strokeStyle: '#a8a8a8',
                     lineWidth: 1.2,
@@ -237,10 +237,10 @@ function createRopeWithText() {
         cardboardWidth,
         cardboardHeight,
         {
-            density: 0.003,
+            density: 0.0045,  // Slightly heavier for better physics
             friction: 0.3,
-            frictionAir: 0.015,
-            restitution: 0,
+            frictionAir: 0.012,  // Reduce air friction for more swing
+            restitution: 0.2,  // Add bounce for rebound effect
             chamfer: { radius: 3 },
             render: {
                 fillStyle: '#f5f3e8'
@@ -260,7 +260,7 @@ function createRopeWithText() {
         pointB: { x: 0, y: -cardboardHeight / 2 + 10 },  // Connect near top of cardboard
         length: 15,
         stiffness: 1,  // Completely rigid
-        damping: 0.4,
+        damping: 0.2,  // Reduce damping for more bounce and swing
         render: {
             strokeStyle: '#a8a8a8',
             lineWidth: 1.5
