@@ -92,9 +92,10 @@ function init() {
     Events.on(render, 'afterRender', drawCustom);
     Render.run(render);
 
-    // Check if elements go off screen
+    // Check if elements go off screen and enforce position limits
     Events.on(engine, 'afterUpdate', () => {
         checkOffscreen();
+        enforcePositionLimits();
     });
 
     // Request motion permission for iOS
@@ -199,7 +200,7 @@ function createRopeWithText() {
                 bodyA: ropeBodies[i - 1],
                 bodyB: segment,
                 length: segmentHeight,
-                stiffness: 1,  // Maximum stiffness
+                stiffness: 1,  // Maximum stiffness - completely rigid
                 damping: 0.2,
                 render: {
                     strokeStyle: '#a8a8a8',
@@ -207,6 +208,8 @@ function createRopeWithText() {
                     visible: false
                 }
             });
+            // Force constraint to never break
+            constraint.breakingForce = Infinity;
             allConstraints.push(constraint);
             Composite.add(engine.world, constraint);
         }
@@ -222,6 +225,8 @@ function createRopeWithText() {
                     visible: false
                 }
             });
+            // Force pin to never break
+            pin.breakingForce = Infinity;
             allConstraints.push(pin);
             Composite.add(engine.world, pin);
         }
@@ -267,6 +272,8 @@ function createRopeWithText() {
             lineWidth: 1.5
         }
     });
+    // Force constraint to never break
+    pendulumConstraint.breakingForce = Infinity;
     allConstraints.push(pendulumConstraint);
     Composite.add(engine.world, pendulumConstraint);
 }
@@ -451,10 +458,10 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
         // Old paper background with realistic texture
         ctx.fillStyle = visual.paperColor;
 
-        // Irregular cut-out edges
+        // Realistic scissor-cut edges with variation
         const seed = visualOffset + i + lineIndex * 100;
-        const edgeVariation = 1.5;
         ctx.beginPath();
+
         const corners = [
             [-width/2 - padding, -height/2 - padding],
             [width/2 + padding, -height/2 - padding],
@@ -464,24 +471,48 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
 
         corners.forEach((corner, j) => {
             const nextCorner = corners[(j + 1) % corners.length];
+
             if (j === 0) {
-                ctx.moveTo(
-                    corner[0] + (Math.sin(seed + j) * edgeVariation),
-                    corner[1] + (Math.cos(seed + j) * edgeVariation)
-                );
+                ctx.moveTo(corner[0], corner[1]);
             }
 
-            const midX = (corner[0] + nextCorner[0]) / 2;
-            const midY = (corner[1] + nextCorner[1]) / 2;
-            const wobble = Math.sin(seed + j * 2) * 1.5;
+            // Random edge style for each side
+            const edgeType = Math.floor(Math.sin(seed + j * 7) * 3);
 
-            ctx.quadraticCurveTo(
-                corner[0] + Math.cos(seed + j) * edgeVariation,
-                corner[1] + Math.sin(seed + j) * edgeVariation,
-                midX + wobble,
-                midY + wobble
-            );
+            if (edgeType === 0 || edgeType === -1) {
+                // Straight cut edge (40% chance)
+                ctx.lineTo(nextCorner[0], nextCorner[1]);
+            } else if (edgeType === 1) {
+                // Slightly wavy edge (30% chance)
+                const steps = 3;
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    const x = corner[0] + (nextCorner[0] - corner[0]) * t;
+                    const y = corner[1] + (nextCorner[1] - corner[1]) * t;
+                    const wobble = Math.sin(seed + j * 3 + s) * 1;
+                    ctx.lineTo(x + wobble, y + wobble);
+                }
+            } else {
+                // Torn/notched edge with small cuts (30% chance)
+                const steps = 4;
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    const x = corner[0] + (nextCorner[0] - corner[0]) * t;
+                    const y = corner[1] + (nextCorner[1] - corner[1]) * t;
+
+                    // Small random notch
+                    if (s === 2 && Math.sin(seed + j * 5) > 0.3) {
+                        const notchSize = 2;
+                        const perpX = -(nextCorner[1] - corner[1]) / Math.sqrt((nextCorner[0] - corner[0])**2 + (nextCorner[1] - corner[1])**2);
+                        const perpY = (nextCorner[0] - corner[0]) / Math.sqrt((nextCorner[0] - corner[0])**2 + (nextCorner[1] - corner[1])**2);
+                        ctx.lineTo(x + perpX * notchSize, y + perpY * notchSize);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+            }
         });
+
         ctx.closePath();
         ctx.fill();
 
@@ -543,6 +574,42 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
 
         currentX += width + config.letterSpacing;
     }
+}
+
+// Enforce position limits - cardboard cannot go below screen center-top
+function enforcePositionLimits() {
+    if (!cardboardBody) return;
+
+    // Maximum Y position (screen center-top area)
+    const maxY = canvas.height * 0.4;  // 40% down from top = upper-center
+
+    // If cardboard goes too low, force it back up
+    if (cardboardBody.position.y > maxY) {
+        Body.setPosition(cardboardBody, {
+            x: cardboardBody.position.x,
+            y: maxY
+        });
+        // Reduce downward velocity
+        if (cardboardBody.velocity.y > 0) {
+            Body.setVelocity(cardboardBody, {
+                x: cardboardBody.velocity.x,
+                y: cardboardBody.velocity.y * 0.3
+            });
+        }
+    }
+
+    // Also limit rope segments
+    ropeBodies.forEach((segment, index) => {
+        if (index === 0) return; // Skip pinned segment
+
+        const ropeMaxY = config.startY + config.ropeLength + 50;
+        if (segment.position.y > ropeMaxY) {
+            Body.setPosition(segment, {
+                x: segment.position.x,
+                y: ropeMaxY
+            });
+        }
+    });
 }
 
 // Check if elements are offscreen
