@@ -38,18 +38,17 @@ const paperColors = [
 // Global variables
 let engine, render, runner;
 let canvas, ctx;
-let textBodies = [];
+let cardboardBody = null;  // Single cardboard body
 let ropeBodies = [];
 let allConstraints = [];
-let rotationConstraints = [];  // Constraints to keep text horizontal
 let isOffscreen = false;
 
 // Device orientation tracking
 let lastGamma = 0;
 let lastBeta = 0;
 
-// Store letter visual properties
-let letterVisuals = new Map();
+// Store letter visual properties for rendering
+let letterVisuals = [];
 
 // Drop animation
 let dropAnimationStartTime = null;
@@ -93,10 +92,9 @@ function init() {
     Events.on(render, 'afterRender', drawCustom);
     Render.run(render);
 
-    // Check if elements go off screen and handle rotation constraint
+    // Check if elements go off screen
     Events.on(engine, 'afterUpdate', () => {
         checkOffscreen();
-        updateRotationConstraints();
     });
 
     // Request motion permission for iOS
@@ -154,24 +152,31 @@ function handleOrientation(event) {
     engine.gravity.y = Math.max(0.4, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.4);
 }
 
-// Create single rope with two-line text at the end
+// Create single rope with cardboard at the end
 function createRopeWithText() {
     const centerX = canvas.width / 2;
     const startY = config.startY;
 
     // Start position for drop animation (high above screen)
-    const dropStartY = -300;
+    const dropStartY = -400;
+
+    // Calculate cardboard dimensions
+    const cardboardWidth = 340;
+    const cardboardHeight = 140;
+
+    // Pre-generate letter visual properties
+    generateLetterVisuals();
 
     // Create single vertical rope
     const segmentHeight = config.ropeLength / config.ropeSegments;
 
     for (let i = 0; i < config.ropeSegments; i++) {
         const y = dropStartY + i * segmentHeight;  // Start from drop position
-        const segment = Bodies.circle(centerX, y, 1.2, {
-            density: 0.0003,  // Even lighter for minimal stretch
-            friction: 0.1,
-            frictionAir: 0.03,
-            restitution: 0.01,
+        const segment = Bodies.circle(centerX, y, 1, {
+            density: 0.00001,  // Ultra light for minimal stretch
+            friction: 0.05,
+            frictionAir: 0.01,
+            restitution: 0,
             render: {
                 fillStyle: '#b8b8b8',
                 strokeStyle: '#a0a0a0',
@@ -219,124 +224,62 @@ function createRopeWithText() {
     // Get the end of the rope
     const ropeEnd = ropeBodies[ropeBodies.length - 1];
 
-    // Create two lines of text
-    createTextLine(config.line1, ropeEnd, 0);
-    createTextLine(config.line2, ropeEnd, 1);
+    // Create cardboard body at the end of rope
+    const cardboardY = ropeEnd.position.y + 80;
+    cardboardBody = Bodies.rectangle(
+        centerX,
+        cardboardY,
+        cardboardWidth,
+        cardboardHeight,
+        {
+            density: 0.002,
+            friction: 0.3,
+            frictionAir: 0.02,
+            restitution: 0,
+            chamfer: { radius: 3 },
+            render: {
+                fillStyle: '#f5f3e8'
+            }
+        }
+    );
+
+    Composite.add(engine.world, cardboardBody);
+
+    // Connect cardboard to rope end with pendulum-like constraint
+    const pendulumConstraint = Constraint.create({
+        bodyA: ropeEnd,
+        bodyB: cardboardBody,
+        pointB: { x: 0, y: -cardboardHeight / 2 + 10 },  // Connect near top of cardboard
+        length: 15,
+        stiffness: 1,  // Very stiff
+        damping: 0.3,
+        render: {
+            strokeStyle: '#a8a8a8',
+            lineWidth: 1.5
+        }
+    });
+    allConstraints.push(pendulumConstraint);
+    Composite.add(engine.world, pendulumConstraint);
 }
 
-// Create a line of text attached to rope
-function createTextLine(text, ropeEnd, lineIndex) {
-    const letters = text.split('');
-    const fontSize = config.letterSize;
+// Generate letter visual properties for rendering on cardboard
+function generateLetterVisuals() {
+    const allText = config.line1 + config.line2;
+    letterVisuals = [];
 
-    // Calculate total width for centering
-    let totalWidth = 0;
-    letters.forEach(letter => {
-        totalWidth += measureLetterWidth(letter, fontSize) + config.letterSpacing;
-    });
-    totalWidth -= config.letterSpacing; // Remove last spacing
-
-    const centerX = canvas.width / 2;
-    const startX = centerX - totalWidth / 2;
-    const lineY = ropeEnd.position.y + 40 + lineIndex * (fontSize + config.lineSpacing);
-
-    let currentX = startX;
-    const lineBodies = [];
-
-    letters.forEach((letter, index) => {
-        const letterWidth = measureLetterWidth(letter, fontSize);
-
-        // Random rotation for ransom note effect
-        const randomAngle = (Math.random() - 0.5) * 0.15;
-
-        const letterBody = Bodies.rectangle(
-            currentX + letterWidth / 2,
-            lineY,
-            letterWidth + 10,
-            fontSize + 8,
-            {
-                density: 0.003,  // Even lighter
-                friction: 0.5,
-                frictionAir: 0.025,
-                restitution: 0.01,
-                angle: 0,  // Start horizontal
-                chamfer: { radius: 1 },
-                render: {
-                    fillStyle: '#000000'
-                },
-                letter: letter,
-                lineIndex: lineIndex,
-                initialRotation: randomAngle  // Store for visual rotation only
-            }
-        );
-
-        // Store visual properties for this letter
+    for (let i = 0; i < allText.length; i++) {
+        const letter = allText[i];
         const styleIndex = Math.floor(Math.random() * letterStyles.length);
         const paperIndex = Math.floor(Math.random() * paperColors.length);
-        letterVisuals.set(letterBody.id, {
+
+        letterVisuals.push({
+            letter: letter,
             font: letterStyles[styleIndex].font,
             color: letterStyles[styleIndex].color,
             paperColor: paperColors[paperIndex],
-            rotation: (Math.random() - 0.5) * 0.08
+            rotation: (Math.random() - 0.5) * 0.12
         });
-
-        textBodies.push(letterBody);
-        lineBodies.push(letterBody);
-        Composite.add(engine.world, letterBody);
-
-        // Connect letters within the line (softer connections)
-        if (index > 0) {
-            const prevLetter = lineBodies[index - 1];
-            const letterConstraint = Constraint.create({
-                bodyA: prevLetter,
-                bodyB: letterBody,
-                length: config.letterSpacing,
-                stiffness: 0.4,
-                damping: 0.12,
-                render: {
-                    visible: false
-                }
-            });
-            allConstraints.push(letterConstraint);
-            Composite.add(engine.world, letterConstraint);
-        }
-
-        // Connect first letter of each line to rope (stiff connection)
-        if (index === 0) {
-            const ropeConstraint = Constraint.create({
-                bodyA: ropeEnd,
-                bodyB: letterBody,
-                length: 35 + lineIndex * (fontSize + config.lineSpacing),
-                stiffness: 0.6,
-                damping: 0.15,
-                render: {
-                    strokeStyle: '#a8a8a8',
-                    lineWidth: 1.2
-                }
-            });
-            allConstraints.push(ropeConstraint);
-            Composite.add(engine.world, ropeConstraint);
-        }
-
-        // Also connect middle letter to rope for stability
-        if (index === Math.floor(letters.length / 2)) {
-            const ropeConstraint = Constraint.create({
-                bodyA: ropeEnd,
-                bodyB: letterBody,
-                length: 35 + lineIndex * (fontSize + config.lineSpacing),
-                stiffness: 0.5,
-                damping: 0.15,
-                render: {
-                    strokeStyle: '#a8a8a8',
-                    lineWidth: 1.2
-                }
-            });
-            allConstraints.push(ropeConstraint);
-            Composite.add(engine.world, ropeConstraint);
-        }
-
-        currentX += letterWidth + config.letterSpacing;
-    });
+    }
 }
 
 // Measure individual letter width
@@ -345,38 +288,6 @@ function measureLetterWidth(letter, fontSize) {
     return ctx.measureText(letter).width;
 }
 
-// Update rotation constraints to keep text mostly horizontal
-function updateRotationConstraints() {
-    if (isOffscreen) return;
-
-    textBodies.forEach(body => {
-        // Calculate allowed rotation based on gravity strength
-        const totalGravity = Math.sqrt(engine.gravity.x ** 2 + engine.gravity.y ** 2);
-
-        // Only allow 2-3 degrees of rotation, and only when gravity is strong
-        const maxRotation = 0.05;  // ~2.86 degrees
-        const gravityThreshold = 0.5;
-
-        let targetAngle = 0;
-
-        if (totalGravity > gravityThreshold) {
-            // Allow slight tilt only during strong shaking
-            const tiltAmount = Math.atan2(engine.gravity.x, engine.gravity.y);
-            targetAngle = Math.max(-maxRotation, Math.min(maxRotation, tiltAmount * 0.3));
-        }
-
-        // Strongly constrain rotation
-        const currentAngle = body.angle;
-        const angleDiff = targetAngle - currentAngle;
-
-        // Apply strong rotational constraint
-        Body.setAngularVelocity(body, body.angularVelocity * 0.7);  // Damping
-
-        if (Math.abs(angleDiff) > 0.001) {
-            Body.setAngle(body, currentAngle + angleDiff * 0.15);
-        }
-    });
-}
 
 // Custom drawing for enhanced ransom note effect
 function drawCustom() {
@@ -428,46 +339,111 @@ function drawCustom() {
         ctx.stroke();
     }
 
-    // Draw rope-to-text connections
+    // Draw rope-to-cardboard connection
     allConstraints.forEach(constraint => {
         if (constraint.render.visible !== false && constraint.bodyA && constraint.bodyB) {
-            const isRopeConnection = ropeBodies.includes(constraint.bodyA) && textBodies.includes(constraint.bodyB);
+            const isRopeConnection = ropeBodies.includes(constraint.bodyA) && constraint.bodyB === cardboardBody;
             if (isRopeConnection) {
                 ctx.beginPath();
                 ctx.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
-                ctx.lineTo(constraint.bodyB.position.x, constraint.bodyB.position.y);
+                const attachPoint = {
+                    x: cardboardBody.position.x + constraint.pointB.x * Math.cos(cardboardBody.angle) - constraint.pointB.y * Math.sin(cardboardBody.angle),
+                    y: cardboardBody.position.y + constraint.pointB.x * Math.sin(cardboardBody.angle) + constraint.pointB.y * Math.cos(cardboardBody.angle)
+                };
+                ctx.lineTo(attachPoint.x, attachPoint.y);
                 ctx.strokeStyle = '#a8a8a8';
-                ctx.lineWidth = 1.2;
+                ctx.lineWidth = 1.5;
                 ctx.stroke();
             }
         }
     });
 
-    // Draw letters with enhanced ransom note collage effect
-    textBodies.forEach((body, index) => {
+    // Draw cardboard with ransom note letters
+    if (cardboardBody) {
         ctx.save();
-        ctx.translate(body.position.x, body.position.y);
-        ctx.rotate(body.angle);
+        ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
+        ctx.rotate(cardboardBody.angle);
 
-        const letter = body.letter;
-        const fontSize = config.letterSize;
-        const visual = letterVisuals.get(body.id);
+        const cardboardWidth = 340;
+        const cardboardHeight = 140;
 
-        // Measure letter with specific font
+        // Draw cardboard background
+        ctx.fillStyle = '#f5f3e8';
+        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
+
+        // Add cardboard texture
+        ctx.fillStyle = 'rgba(200, 190, 170, 0.03)';
+        for (let i = 0; i < 100; i++) {
+            const px = (Math.random() - 0.5) * cardboardWidth;
+            const py = (Math.random() - 0.5) * cardboardHeight;
+            ctx.fillRect(px, py, 1, 1);
+        }
+
+        // Draw border
+        ctx.strokeStyle = '#d8d6d0';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
+
+        // Draw letters on cardboard
+        drawLettersOnCardboard(cardboardWidth, cardboardHeight);
+
+        ctx.restore();
+    }
+
+    ctx.restore();
+}
+
+// Draw ransom note style letters on cardboard
+function drawLettersOnCardboard(cardboardWidth, cardboardHeight) {
+    const fontSize = config.letterSize;
+    const line1 = config.line1;
+    const line2 = config.line2;
+
+    // Line 1: "TURN"
+    drawTextLine(line1, 0, -25, 0, fontSize);
+
+    // Line 2: "HORIZONTAL"
+    drawTextLine(line2, line1.length, 25, 1, fontSize);
+}
+
+// Draw a single line of text with collage effect
+function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
+    // Calculate total width
+    let totalWidth = 0;
+    for (let i = 0; i < text.length; i++) {
+        ctx.font = `bold ${fontSize}px ${letterVisuals[visualOffset + i].font}`;
+        totalWidth += ctx.measureText(text[i]).width + config.letterSpacing;
+    }
+    totalWidth -= config.letterSpacing;
+
+    let currentX = -totalWidth / 2;
+
+    for (let i = 0; i < text.length; i++) {
+        const letter = text[i];
+        const visual = letterVisuals[visualOffset + i];
+
+        ctx.save();
+
+        // Position letter
         ctx.font = `bold ${fontSize}px ${visual.font}`;
+
         const metrics = ctx.measureText(letter);
         const width = metrics.width;
         const height = fontSize;
-
         const padding = 7;
 
-        // Seed random generator for consistent texture per letter
-        const seed = body.id;
+        // Position for this letter
+        const letterX = currentX + width / 2;
+        const letterY = yOffset;
+
+        ctx.translate(letterX, letterY);
+        ctx.rotate(visual.rotation);
 
         // Old paper background with realistic texture
         ctx.fillStyle = visual.paperColor;
 
-        // Irregular cut-out edges (like scissors or torn from magazine)
+        // Irregular cut-out edges
+        const seed = visualOffset + i + lineIndex * 100;
         const edgeVariation = 1.5;
         ctx.beginPath();
         const corners = [
@@ -477,24 +453,22 @@ function drawCustom() {
             [-width/2 - padding, height/2 + padding]
         ];
 
-        // Create irregular path
-        corners.forEach((corner, i) => {
-            const nextCorner = corners[(i + 1) % corners.length];
-            if (i === 0) {
+        corners.forEach((corner, j) => {
+            const nextCorner = corners[(j + 1) % corners.length];
+            if (j === 0) {
                 ctx.moveTo(
-                    corner[0] + (Math.sin(seed + i) * edgeVariation),
-                    corner[1] + (Math.cos(seed + i) * edgeVariation)
+                    corner[0] + (Math.sin(seed + j) * edgeVariation),
+                    corner[1] + (Math.cos(seed + j) * edgeVariation)
                 );
             }
 
-            // Slightly wavy edges
             const midX = (corner[0] + nextCorner[0]) / 2;
             const midY = (corner[1] + nextCorner[1]) / 2;
-            const wobble = Math.sin(seed + i * 2) * 1.5;
+            const wobble = Math.sin(seed + j * 2) * 1.5;
 
             ctx.quadraticCurveTo(
-                corner[0] + Math.cos(seed + i) * edgeVariation,
-                corner[1] + Math.sin(seed + i) * edgeVariation,
+                corner[0] + Math.cos(seed + j) * edgeVariation,
+                corner[1] + Math.sin(seed + j) * edgeVariation,
                 midX + wobble,
                 midY + wobble
             );
@@ -502,39 +476,38 @@ function drawCustom() {
         ctx.closePath();
         ctx.fill();
 
-        // Multi-layer paper texture for realism
+        // Multi-layer paper texture
 
-        // Layer 1: Fine grain (like newsprint)
+        // Fine grain
         ctx.fillStyle = 'rgba(100, 90, 80, 0.02)';
-        for (let i = 0; i < 60; i++) {
-            const angle = Math.sin(seed + i) * Math.PI * 2;
-            const dist = Math.cos(seed + i * 2) * width/2;
+        for (let j = 0; j < 60; j++) {
+            const angle = Math.sin(seed + j) * Math.PI * 2;
+            const dist = Math.cos(seed + j * 2) * width/2;
             const px = Math.cos(angle) * dist;
             const py = Math.sin(angle) * dist;
             ctx.fillRect(px, py, 0.8, 0.8);
         }
 
-        // Layer 2: Fiber patterns (like old paper fibers)
+        // Fiber patterns
         ctx.strokeStyle = 'rgba(80, 70, 60, 0.04)';
         ctx.lineWidth = 0.3;
-        for (let i = 0; i < 5; i++) {
-            const x1 = (Math.sin(seed + i * 0.5) - 0.5) * width;
-            const y1 = (Math.cos(seed + i * 0.7) - 0.5) * height;
-            const x2 = x1 + Math.sin(seed + i) * 15;
-            const y2 = y1 + Math.cos(seed + i) * 15;
+        for (let j = 0; j < 5; j++) {
+            const x1 = (Math.sin(seed + j * 0.5) - 0.5) * width;
+            const y1 = (Math.cos(seed + j * 0.7) - 0.5) * height;
+            const x2 = x1 + Math.sin(seed + j) * 15;
+            const y2 = y1 + Math.cos(seed + j) * 15;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
             ctx.stroke();
         }
 
-        // Layer 3: Age stains (like coffee or time)
+        // Age stains
         const stainCount = Math.floor(Math.abs(Math.sin(seed)) * 3);
-        for (let i = 0; i < stainCount; i++) {
-            ctx.fillStyle = 'rgba(139, 119, 101, 0.06)';
-            const stainX = Math.sin(seed + i * 1.3) * width * 0.4;
-            const stainY = Math.cos(seed + i * 1.7) * height * 0.4;
-            const stainRadius = 4 + Math.abs(Math.sin(seed + i)) * 6;
+        for (let j = 0; j < stainCount; j++) {
+            const stainX = Math.sin(seed + j * 1.3) * width * 0.4;
+            const stainY = Math.cos(seed + j * 1.7) * height * 0.4;
+            const stainRadius = 4 + Math.abs(Math.sin(seed + j)) * 6;
 
             const gradient = ctx.createRadialGradient(stainX, stainY, 0, stainX, stainY, stainRadius);
             gradient.addColorStop(0, 'rgba(139, 119, 101, 0.1)');
@@ -546,63 +519,36 @@ function drawCustom() {
             ctx.fill();
         }
 
-        // Layer 4: Subtle creases and folds
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.025)';
-        ctx.lineWidth = 0.4;
-        for (let i = 0; i < 2; i++) {
-            const x1 = Math.sin(seed + i * 2) * width * 0.5;
-            const y1 = -height/2 - padding;
-            const x2 = Math.cos(seed + i * 2) * width * 0.5;
-            const y2 = height/2 + padding;
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-        }
-
-        // Layer 5: Very subtle yellowing gradient (old paper effect)
-        const yellowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(width, height));
-        yellowGradient.addColorStop(0, 'rgba(255, 248, 220, 0)');
-        yellowGradient.addColorStop(1, 'rgba(245, 235, 200, 0.03)');
-        ctx.fillStyle = yellowGradient;
-        ctx.fillRect(-width/2 - padding, -height/2 - padding, width + padding * 2, height + padding * 2);
-
-        // Add visual rotation for collage effect (on top of physics rotation)
-        const initialRotation = body.initialRotation || 0;
-        ctx.rotate(initialRotation);
-
-        // Draw letter with ransom note font
+        // Draw letter
         ctx.fillStyle = visual.color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = `bold ${fontSize}px ${visual.font}`;
         ctx.fillText(letter, 0, 0);
 
-        // Very subtle print texture on letter
+        // Subtle print texture
         ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
         ctx.fillText(letter, 0.3, 0.3);
 
         ctx.restore();
-    });
 
-    ctx.restore();
+        currentX += width + config.letterSpacing;
+    }
 }
 
 // Check if elements are offscreen
 function checkOffscreen() {
-    if (isOffscreen) return;
+    if (isOffscreen || !cardboardBody) return;
 
-    const allBodies = [...textBodies, ...ropeBodies];
     const screenMargin = 250;
 
-    const allOffscreen = allBodies.every(body => {
-        return body.position.y > canvas.height + screenMargin ||
-               body.position.y < -screenMargin ||
-               body.position.x > canvas.width + screenMargin ||
-               body.position.x < -screenMargin;
-    });
+    const cardboardOffscreen =
+        cardboardBody.position.y > canvas.height + screenMargin ||
+        cardboardBody.position.y < -screenMargin ||
+        cardboardBody.position.x > canvas.width + screenMargin ||
+        cardboardBody.position.x < -screenMargin;
 
-    if (allOffscreen) {
+    if (cardboardOffscreen) {
         isOffscreen = true;
         removeAllElements();
     }
@@ -610,16 +556,19 @@ function checkOffscreen() {
 
 // Remove all elements
 function removeAllElements() {
-    textBodies.forEach(body => Composite.remove(engine.world, body));
+    if (cardboardBody) {
+        Composite.remove(engine.world, cardboardBody);
+        cardboardBody = null;
+    }
+
     ropeBodies.forEach(body => Composite.remove(engine.world, body));
     allConstraints.forEach(constraint => Composite.remove(engine.world, constraint));
 
-    textBodies = [];
     ropeBodies = [];
     allConstraints = [];
-    letterVisuals.clear();
+    letterVisuals = [];
 
-    console.log('All elements removed - text has disappeared');
+    console.log('All elements removed - cardboard has disappeared');
 }
 
 // Handle window resize
