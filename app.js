@@ -7,12 +7,12 @@ const config = {
     line2: 'HORIZONTAL',
     letterSpacing: 6,
     lineSpacing: 20,
-    ropeSegments: 60,
-    ropeStiffness: 0.35,
-    ropeDamping: 0.08,
+    ropeSegments: 35,
+    ropeStiffness: 0.95,  // Very stiff to prevent stretching
+    ropeDamping: 0.15,
     letterSize: 45,
-    startY: 80,
-    ropeLength: 180
+    startY: 120,  // Position to hang text in upper-center area
+    ropeLength: 120
 };
 
 // Ransom note style fonts and colors
@@ -126,20 +126,20 @@ function handleOrientation(event) {
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
 
-    // Much smoother transitions
-    const smoothFactor = 0.1;
+    // Very smooth transitions for natural movement
+    const smoothFactor = 0.06;
     const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
     const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
     lastGamma = smoothGamma;
     lastBeta = smoothBeta;
 
-    // Reduced sensitivity for more natural interaction
-    const maxTilt = 60;
-    const gravityStrength = 0.45;
+    // Very low sensitivity for gentle, natural interaction
+    const maxTilt = 75;
+    const gravityStrength = 0.3;
 
     engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
-    engine.gravity.y = Math.max(0.3, Math.abs(smoothBeta / maxTilt) * gravityStrength);
+    engine.gravity.y = Math.max(0.4, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.4);
 }
 
 // Create single rope with two-line text at the end
@@ -152,11 +152,11 @@ function createRopeWithText() {
 
     for (let i = 0; i < config.ropeSegments; i++) {
         const y = startY + i * segmentHeight;
-        const segment = Bodies.circle(centerX, y, 1.5, {
-            density: 0.0008,
-            friction: 0.15,
-            frictionAir: 0.02,
-            restitution: 0.05,
+        const segment = Bodies.circle(centerX, y, 1.2, {
+            density: 0.0005,
+            friction: 0.1,
+            frictionAir: 0.03,
+            restitution: 0.02,
             render: {
                 fillStyle: '#b8b8b8',
                 strokeStyle: '#a0a0a0',
@@ -167,7 +167,7 @@ function createRopeWithText() {
         ropeBodies.push(segment);
         Composite.add(engine.world, segment);
 
-        // Connect segments with very soft constraints
+        // Connect segments with very stiff constraints to prevent stretching
         if (i > 0) {
             const constraint = Constraint.create({
                 bodyA: ropeBodies[i - 1],
@@ -177,7 +177,8 @@ function createRopeWithText() {
                 damping: config.ropeDamping,
                 render: {
                     strokeStyle: '#a8a8a8',
-                    lineWidth: 1.2
+                    lineWidth: 1.2,
+                    visible: false
                 }
             });
             allConstraints.push(constraint);
@@ -239,10 +240,10 @@ function createTextLine(text, ropeEnd, lineIndex) {
             letterWidth + 10,
             fontSize + 8,
             {
-                density: 0.006,
-                friction: 0.4,
-                frictionAir: 0.015,
-                restitution: 0.05,
+                density: 0.004,
+                friction: 0.5,
+                frictionAir: 0.025,
+                restitution: 0.02,
                 angle: randomAngle,
                 chamfer: { radius: 1 },
                 render: {
@@ -267,15 +268,15 @@ function createTextLine(text, ropeEnd, lineIndex) {
         lineBodies.push(letterBody);
         Composite.add(engine.world, letterBody);
 
-        // Connect letters within the line
+        // Connect letters within the line (softer connections)
         if (index > 0) {
             const prevLetter = lineBodies[index - 1];
             const letterConstraint = Constraint.create({
                 bodyA: prevLetter,
                 bodyB: letterBody,
                 length: config.letterSpacing,
-                stiffness: 0.25,
-                damping: 0.08,
+                stiffness: 0.4,
+                damping: 0.12,
                 render: {
                     visible: false
                 }
@@ -284,14 +285,14 @@ function createTextLine(text, ropeEnd, lineIndex) {
             Composite.add(engine.world, letterConstraint);
         }
 
-        // Connect first letter of each line to rope
+        // Connect first letter of each line to rope (stiff connection)
         if (index === 0) {
             const ropeConstraint = Constraint.create({
                 bodyA: ropeEnd,
                 bodyB: letterBody,
                 length: 35 + lineIndex * (fontSize + config.lineSpacing),
-                stiffness: 0.3,
-                damping: 0.1,
+                stiffness: 0.6,
+                damping: 0.15,
                 render: {
                     strokeStyle: '#a8a8a8',
                     lineWidth: 1.2
@@ -307,8 +308,8 @@ function createTextLine(text, ropeEnd, lineIndex) {
                 bodyA: ropeEnd,
                 bodyB: letterBody,
                 length: 35 + lineIndex * (fontSize + config.lineSpacing),
-                stiffness: 0.25,
-                damping: 0.1,
+                stiffness: 0.5,
+                damping: 0.15,
                 render: {
                     strokeStyle: '#a8a8a8',
                     lineWidth: 1.2
@@ -332,28 +333,49 @@ function measureLetterWidth(letter, fontSize) {
 function drawCustom() {
     ctx.save();
 
-    // Draw rope as smooth curve
-    if (ropeBodies.length > 1) {
+    // Draw rope as very smooth Catmull-Rom spline
+    if (ropeBodies.length > 2) {
         ctx.beginPath();
+
+        // Start from first point
         ctx.moveTo(ropeBodies[0].position.x, ropeBodies[0].position.y);
 
-        for (let i = 1; i < ropeBodies.length; i++) {
-            const curr = ropeBodies[i];
-            const prev = ropeBodies[i - 1];
+        // Use Catmull-Rom spline for ultra-smooth rope
+        for (let i = 0; i < ropeBodies.length - 1; i++) {
+            const p0 = ropeBodies[Math.max(0, i - 1)];
+            const p1 = ropeBodies[i];
+            const p2 = ropeBodies[i + 1];
+            const p3 = ropeBodies[Math.min(ropeBodies.length - 1, i + 2)];
 
-            if (i === 1) {
-                ctx.lineTo(curr.position.x, curr.position.y);
-            } else {
-                // Smooth curve through points
-                const midX = (prev.position.x + curr.position.x) / 2;
-                const midY = (prev.position.y + curr.position.y) / 2;
-                ctx.quadraticCurveTo(prev.position.x, prev.position.y, midX, midY);
+            // Draw smooth curve between p1 and p2
+            const steps = 8;
+            for (let t = 0; t <= steps; t++) {
+                const s = t / steps;
+                const s2 = s * s;
+                const s3 = s2 * s;
+
+                const x = 0.5 * (
+                    (2 * p1.position.x) +
+                    (-p0.position.x + p2.position.x) * s +
+                    (2 * p0.position.x - 5 * p1.position.x + 4 * p2.position.x - p3.position.x) * s2 +
+                    (-p0.position.x + 3 * p1.position.x - 3 * p2.position.x + p3.position.x) * s3
+                );
+
+                const y = 0.5 * (
+                    (2 * p1.position.y) +
+                    (-p0.position.y + p2.position.y) * s +
+                    (2 * p0.position.y - 5 * p1.position.y + 4 * p2.position.y - p3.position.y) * s2 +
+                    (-p0.position.y + 3 * p1.position.y - 3 * p2.position.y + p3.position.y) * s3
+                );
+
+                ctx.lineTo(x, y);
             }
         }
 
-        ctx.strokeStyle = '#a8a8a8';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#aaaaaa';
+        ctx.lineWidth = 1.8;
         ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.stroke();
     }
 
@@ -372,8 +394,8 @@ function drawCustom() {
         }
     });
 
-    // Draw letters with ransom note collage effect
-    textBodies.forEach(body => {
+    // Draw letters with enhanced ransom note collage effect
+    textBodies.forEach((body, index) => {
         ctx.save();
         ctx.translate(body.position.x, body.position.y);
         ctx.rotate(body.angle);
@@ -388,52 +410,113 @@ function drawCustom() {
         const width = metrics.width;
         const height = fontSize;
 
-        const padding = 6;
+        const padding = 7;
 
-        // Old paper background with texture
+        // Seed random generator for consistent texture per letter
+        const seed = body.id;
+
+        // Old paper background with realistic texture
         ctx.fillStyle = visual.paperColor;
 
-        // Slightly irregular rectangle for cut-out effect
-        const irregularity = 1;
+        // Irregular cut-out edges (like scissors or torn from magazine)
+        const edgeVariation = 1.5;
         ctx.beginPath();
-        ctx.moveTo(-width/2 - padding + Math.random() * irregularity, -height/2 - padding);
-        ctx.lineTo(width/2 + padding - Math.random() * irregularity, -height/2 - padding + Math.random() * irregularity);
-        ctx.lineTo(width/2 + padding, height/2 + padding - Math.random() * irregularity);
-        ctx.lineTo(-width/2 - padding + Math.random() * irregularity, height/2 + padding);
+        const corners = [
+            [-width/2 - padding, -height/2 - padding],
+            [width/2 + padding, -height/2 - padding],
+            [width/2 + padding, height/2 + padding],
+            [-width/2 - padding, height/2 + padding]
+        ];
+
+        // Create irregular path
+        corners.forEach((corner, i) => {
+            const nextCorner = corners[(i + 1) % corners.length];
+            if (i === 0) {
+                ctx.moveTo(
+                    corner[0] + (Math.sin(seed + i) * edgeVariation),
+                    corner[1] + (Math.cos(seed + i) * edgeVariation)
+                );
+            }
+
+            // Slightly wavy edges
+            const midX = (corner[0] + nextCorner[0]) / 2;
+            const midY = (corner[1] + nextCorner[1]) / 2;
+            const wobble = Math.sin(seed + i * 2) * 1.5;
+
+            ctx.quadraticCurveTo(
+                corner[0] + Math.cos(seed + i) * edgeVariation,
+                corner[1] + Math.sin(seed + i) * edgeVariation,
+                midX + wobble,
+                midY + wobble
+            );
+        });
         ctx.closePath();
         ctx.fill();
 
-        // Paper texture - subtle noise
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.015)';
-        for (let i = 0; i < 40; i++) {
-            const px = (Math.random() - 0.5) * (width + padding * 2);
-            const py = (Math.random() - 0.5) * (height + padding * 2);
-            ctx.fillRect(px, py, 1, 1);
+        // Multi-layer paper texture for realism
+
+        // Layer 1: Fine grain (like newsprint)
+        ctx.fillStyle = 'rgba(100, 90, 80, 0.02)';
+        for (let i = 0; i < 60; i++) {
+            const angle = Math.sin(seed + i) * Math.PI * 2;
+            const dist = Math.cos(seed + i * 2) * width/2;
+            const px = Math.cos(angle) * dist;
+            const py = Math.sin(angle) * dist;
+            ctx.fillRect(px, py, 0.8, 0.8);
         }
 
-        // Aged paper stains (random subtle spots)
-        if (Math.random() > 0.5) {
-            ctx.fillStyle = 'rgba(139, 119, 101, 0.08)';
-            const stainX = (Math.random() - 0.5) * width;
-            const stainY = (Math.random() - 0.5) * height;
-            ctx.beginPath();
-            ctx.arc(stainX, stainY, 3 + Math.random() * 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Very subtle crumpled paper effect
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.03)';
-        ctx.lineWidth = 0.5;
-        for (let i = 0; i < 3; i++) {
-            const x1 = (Math.random() - 0.5) * width;
-            const y1 = (Math.random() - 0.5) * height;
-            const x2 = (Math.random() - 0.5) * width;
-            const y2 = (Math.random() - 0.5) * height;
+        // Layer 2: Fiber patterns (like old paper fibers)
+        ctx.strokeStyle = 'rgba(80, 70, 60, 0.04)';
+        ctx.lineWidth = 0.3;
+        for (let i = 0; i < 5; i++) {
+            const x1 = (Math.sin(seed + i * 0.5) - 0.5) * width;
+            const y1 = (Math.cos(seed + i * 0.7) - 0.5) * height;
+            const x2 = x1 + Math.sin(seed + i) * 15;
+            const y2 = y1 + Math.cos(seed + i) * 15;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
             ctx.stroke();
         }
+
+        // Layer 3: Age stains (like coffee or time)
+        const stainCount = Math.floor(Math.abs(Math.sin(seed)) * 3);
+        for (let i = 0; i < stainCount; i++) {
+            ctx.fillStyle = 'rgba(139, 119, 101, 0.06)';
+            const stainX = Math.sin(seed + i * 1.3) * width * 0.4;
+            const stainY = Math.cos(seed + i * 1.7) * height * 0.4;
+            const stainRadius = 4 + Math.abs(Math.sin(seed + i)) * 6;
+
+            const gradient = ctx.createRadialGradient(stainX, stainY, 0, stainX, stainY, stainRadius);
+            gradient.addColorStop(0, 'rgba(139, 119, 101, 0.1)');
+            gradient.addColorStop(1, 'rgba(139, 119, 101, 0)');
+            ctx.fillStyle = gradient;
+
+            ctx.beginPath();
+            ctx.arc(stainX, stainY, stainRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Layer 4: Subtle creases and folds
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.025)';
+        ctx.lineWidth = 0.4;
+        for (let i = 0; i < 2; i++) {
+            const x1 = Math.sin(seed + i * 2) * width * 0.5;
+            const y1 = -height/2 - padding;
+            const x2 = Math.cos(seed + i * 2) * width * 0.5;
+            const y2 = height/2 + padding;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+
+        // Layer 5: Very subtle yellowing gradient (old paper effect)
+        const yellowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(width, height));
+        yellowGradient.addColorStop(0, 'rgba(255, 248, 220, 0)');
+        yellowGradient.addColorStop(1, 'rgba(245, 235, 200, 0.03)');
+        ctx.fillStyle = yellowGradient;
+        ctx.fillRect(-width/2 - padding, -height/2 - padding, width + padding * 2, height + padding * 2);
 
         // Slight rotation for each letter
         ctx.rotate(visual.rotation);
@@ -445,9 +528,9 @@ function drawCustom() {
         ctx.font = `bold ${fontSize}px ${visual.font}`;
         ctx.fillText(letter, 0, 0);
 
-        // Very subtle shadow within letter for depth
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-        ctx.fillText(letter, 0.5, 0.5);
+        // Very subtle print texture on letter
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+        ctx.fillText(letter, 0.3, 0.3);
 
         ctx.restore();
     });
