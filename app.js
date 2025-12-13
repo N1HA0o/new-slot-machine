@@ -8,11 +8,12 @@ const config = {
     letterSpacing: 6,
     lineSpacing: 20,
     ropeSegments: 35,
-    ropeStiffness: 0.95,  // Very stiff to prevent stretching
-    ropeDamping: 0.15,
+    ropeStiffness: 0.999,  // Almost completely rigid - only 2% stretch
+    ropeDamping: 0.2,
     letterSize: 45,
     startY: 120,  // Position to hang text in upper-center area
-    ropeLength: 120
+    ropeLength: 120,
+    dropAnimationDuration: 1200  // Drop animation duration in ms
 };
 
 // Ransom note style fonts and colors
@@ -40,6 +41,7 @@ let canvas, ctx;
 let textBodies = [];
 let ropeBodies = [];
 let allConstraints = [];
+let rotationConstraints = [];  // Constraints to keep text horizontal
 let isOffscreen = false;
 
 // Device orientation tracking
@@ -48,6 +50,10 @@ let lastBeta = 0;
 
 // Store letter visual properties
 let letterVisuals = new Map();
+
+// Drop animation
+let dropAnimationStartTime = null;
+let isDropping = true;
 
 // Initialize the application
 function init() {
@@ -80,12 +86,18 @@ function init() {
     // Create the physics elements
     createRopeWithText();
 
+    // Start drop animation
+    dropAnimationStartTime = Date.now();
+
     // Custom rendering
     Events.on(render, 'afterRender', drawCustom);
     Render.run(render);
 
-    // Check if elements go off screen
-    Events.on(engine, 'afterUpdate', checkOffscreen);
+    // Check if elements go off screen and handle rotation constraint
+    Events.on(engine, 'afterUpdate', () => {
+        checkOffscreen();
+        updateRotationConstraints();
+    });
 
     // Request motion permission for iOS
     requestMotionPermission();
@@ -147,16 +159,19 @@ function createRopeWithText() {
     const centerX = canvas.width / 2;
     const startY = config.startY;
 
+    // Start position for drop animation (high above screen)
+    const dropStartY = -300;
+
     // Create single vertical rope
     const segmentHeight = config.ropeLength / config.ropeSegments;
 
     for (let i = 0; i < config.ropeSegments; i++) {
-        const y = startY + i * segmentHeight;
+        const y = dropStartY + i * segmentHeight;  // Start from drop position
         const segment = Bodies.circle(centerX, y, 1.2, {
-            density: 0.0005,
+            density: 0.0003,  // Even lighter for minimal stretch
             friction: 0.1,
             frictionAir: 0.03,
-            restitution: 0.02,
+            restitution: 0.01,
             render: {
                 fillStyle: '#b8b8b8',
                 strokeStyle: '#a0a0a0',
@@ -185,10 +200,10 @@ function createRopeWithText() {
             Composite.add(engine.world, constraint);
         }
 
-        // Pin the first segment (top of rope)
+        // Pin the first segment (top of rope) - this stays fixed at final position
         if (i === 0) {
             const pin = Constraint.create({
-                pointA: { x: centerX, y: startY },
+                pointA: { x: centerX, y: startY },  // Fixed point at final position
                 bodyB: segment,
                 length: 0,
                 stiffness: 1,
@@ -240,17 +255,18 @@ function createTextLine(text, ropeEnd, lineIndex) {
             letterWidth + 10,
             fontSize + 8,
             {
-                density: 0.004,
+                density: 0.003,  // Even lighter
                 friction: 0.5,
                 frictionAir: 0.025,
-                restitution: 0.02,
-                angle: randomAngle,
+                restitution: 0.01,
+                angle: 0,  // Start horizontal
                 chamfer: { radius: 1 },
                 render: {
                     fillStyle: '#000000'
                 },
                 letter: letter,
-                lineIndex: lineIndex
+                lineIndex: lineIndex,
+                initialRotation: randomAngle  // Store for visual rotation only
             }
         );
 
@@ -327,6 +343,39 @@ function createTextLine(text, ropeEnd, lineIndex) {
 function measureLetterWidth(letter, fontSize) {
     ctx.font = `bold ${fontSize}px Arial, sans-serif`;
     return ctx.measureText(letter).width;
+}
+
+// Update rotation constraints to keep text mostly horizontal
+function updateRotationConstraints() {
+    if (isOffscreen) return;
+
+    textBodies.forEach(body => {
+        // Calculate allowed rotation based on gravity strength
+        const totalGravity = Math.sqrt(engine.gravity.x ** 2 + engine.gravity.y ** 2);
+
+        // Only allow 2-3 degrees of rotation, and only when gravity is strong
+        const maxRotation = 0.05;  // ~2.86 degrees
+        const gravityThreshold = 0.5;
+
+        let targetAngle = 0;
+
+        if (totalGravity > gravityThreshold) {
+            // Allow slight tilt only during strong shaking
+            const tiltAmount = Math.atan2(engine.gravity.x, engine.gravity.y);
+            targetAngle = Math.max(-maxRotation, Math.min(maxRotation, tiltAmount * 0.3));
+        }
+
+        // Strongly constrain rotation
+        const currentAngle = body.angle;
+        const angleDiff = targetAngle - currentAngle;
+
+        // Apply strong rotational constraint
+        Body.setAngularVelocity(body, body.angularVelocity * 0.7);  // Damping
+
+        if (Math.abs(angleDiff) > 0.001) {
+            Body.setAngle(body, currentAngle + angleDiff * 0.15);
+        }
+    });
 }
 
 // Custom drawing for enhanced ransom note effect
@@ -518,8 +567,9 @@ function drawCustom() {
         ctx.fillStyle = yellowGradient;
         ctx.fillRect(-width/2 - padding, -height/2 - padding, width + padding * 2, height + padding * 2);
 
-        // Slight rotation for each letter
-        ctx.rotate(visual.rotation);
+        // Add visual rotation for collage effect (on top of physics rotation)
+        const initialRotation = body.initialRotation || 0;
+        ctx.rotate(initialRotation);
 
         // Draw letter with ransom note font
         ctx.fillStyle = visual.color;
