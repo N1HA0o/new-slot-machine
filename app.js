@@ -10,7 +10,7 @@ const config = {
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
     ropeDamping: 0.5,  // Higher damping for smoother rope motion
-    letterSize: 45,
+    letterSize: 36,  // Scaled down by 20%
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
     dropAnimationDuration: 1200  // Drop animation duration in ms
@@ -161,9 +161,9 @@ function createRopeWithText() {
     // Start position for drop animation (way above screen for fast drop)
     const dropStartY = -600;
 
-    // Calculate cardboard dimensions
-    const cardboardWidth = 340;
-    const cardboardHeight = 140;
+    // Calculate cardboard dimensions (scaled down by 20%)
+    const cardboardWidth = 272;
+    const cardboardHeight = 112;
 
     // Pre-generate letter visual properties
     generateLetterVisuals();
@@ -380,8 +380,15 @@ function drawCustom() {
         ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
         ctx.rotate(cardboardBody.angle);
 
-        const cardboardWidth = 340;
-        const cardboardHeight = 140;
+        const cardboardWidth = 272;  // Scaled down by 20%
+        const cardboardHeight = 112;  // Scaled down by 20%
+
+        // Pseudo-3D: Draw subtle shadow first (depth effect)
+        ctx.save();
+        ctx.translate(3, 3);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
+        ctx.restore();
 
         // Draw cardboard background
         ctx.fillStyle = '#f5f3e8';
@@ -394,6 +401,35 @@ function drawCustom() {
             const py = (Math.random() - 0.5) * cardboardHeight;
             ctx.fillRect(px, py, 1, 1);
         }
+
+        // Pseudo-3D: Add subtle edge lighting (top-left lighter, bottom-right darker)
+        // Top edge highlight
+        const topGradient = ctx.createLinearGradient(0, -cardboardHeight / 2, 0, -cardboardHeight / 2 + 8);
+        topGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        topGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = topGradient;
+        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, 8);
+
+        // Left edge highlight
+        const leftGradient = ctx.createLinearGradient(-cardboardWidth / 2, 0, -cardboardWidth / 2 + 8, 0);
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = leftGradient;
+        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, 8, cardboardHeight);
+
+        // Bottom edge shadow
+        const bottomGradient = ctx.createLinearGradient(0, cardboardHeight / 2 - 6, 0, cardboardHeight / 2);
+        bottomGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        bottomGradient.addColorStop(1, 'rgba(0, 0, 0, 0.12)');
+        ctx.fillStyle = bottomGradient;
+        ctx.fillRect(-cardboardWidth / 2, cardboardHeight / 2 - 6, cardboardWidth, 6);
+
+        // Right edge shadow
+        const rightGradient = ctx.createLinearGradient(cardboardWidth / 2 - 6, 0, cardboardWidth / 2, 0);
+        rightGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        rightGradient.addColorStop(1, 'rgba(0, 0, 0, 0.12)');
+        ctx.fillStyle = rightGradient;
+        ctx.fillRect(cardboardWidth / 2 - 6, -cardboardHeight / 2, 6, cardboardHeight);
 
         // Draw border
         ctx.strokeStyle = '#d8d6d0';
@@ -516,6 +552,16 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
         ctx.closePath();
         ctx.fill();
 
+        // Pseudo-3D: Add subtle shadow to letter paper (slightly offset)
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetX = 1.5;
+        ctx.shadowOffsetY = 1.5;
+        ctx.fillStyle = visual.paperColor;
+        ctx.fill();
+        ctx.restore();
+
         // Multi-layer paper texture
 
         // Fine grain
@@ -559,16 +605,21 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
             ctx.fill();
         }
 
-        // Draw letter
-        ctx.fillStyle = visual.color;
+        // Pseudo-3D: Draw letter with subtle depth
+        // Shadow layer for depth
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = `bold ${fontSize}px ${visual.font}`;
+        ctx.fillText(letter, 0.8, 0.8);
+
+        // Main letter
+        ctx.fillStyle = visual.color;
         ctx.fillText(letter, 0, 0);
 
-        // Subtle print texture
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-        ctx.fillText(letter, 0.3, 0.3);
+        // Subtle highlight on top-left for 3D effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillText(letter, -0.3, -0.3);
 
         ctx.restore();
 
