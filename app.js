@@ -10,8 +10,8 @@ const config = {
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
     ropeDamping: 0.5,  // Higher damping for smoother rope motion
-    letterSize: 29,  // Scaled down another 10% from 32
-    letterSizeLine2: 25,  // Smaller size for HORIZONTALLY, scaled down 10%
+    letterSize: 26,  // Scaled down by 12% from 29 (29 * 0.88 = 25.52)
+    letterSizeLine2: 22,  // Scaled down by 12% from 25 (25 * 0.88 = 22)
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 217,  // Shortened by 5% from 228 (228 * 0.95 = 216.6)
     dropAnimationDuration: 1200  // Drop animation duration in ms
@@ -238,32 +238,37 @@ function triggerHorizontalMode() {
     isOffscreen = false;
     isImageMode = true;  // Enable image mode - rope will never break
 
-    // Determine which side to drop from (based on gamma direction)
+    // Determine which side is higher based on gamma (tilt left/right)
+    // Positive gamma = tilted right, so left side is higher
+    // Negative gamma = tilted left, so right side is higher
     const dropFromLeft = lastGamma > 0;
-    const sideX = dropFromLeft ? 100 : canvas.width - 100;
 
-    console.log('Creating image cardboard at x:', sideX);
+    console.log('Creating image cardboard from', dropFromLeft ? 'LEFT' : 'RIGHT', 'side');
     console.log('Image mode enabled - rope will never break');
-    createImageCardboard(sideX);
+    createImageCardboard(dropFromLeft);
 }
 
-// Create cardboard with images
-function createImageCardboard(startX) {
-    const startY = -80;
-    const dropStartY = -600;
+// Create cardboard with images (drops from left or right edge)
+function createImageCardboard(dropFromLeft) {
+    // Calculate dimensions (scaled up by 21% from 214x80)
+    const cardboardWidth = 259;  // 214 * 1.21 = 258.94
+    const cardboardHeight = 97;  // 80 * 1.21 = 96.8
 
-    // Calculate dimensions based on cardboard image (scaled down 10%)
-    const cardboardWidth = 243;
-    const cardboardHeight = 91;
+    // Determine drop position from left or right edge
+    const screenTopY = canvas.height * 0.1;  // 10% from top
+    const startX = dropFromLeft ? -100 : canvas.width + 100;  // Start outside screen edge
+    const finalX = dropFromLeft ? 100 : canvas.width - 100;  // Final position near edge
 
-    // Create vertical rope from top
-    const ropeLength = 217;  // Match main rope length (shortened by 5%)
+    // Create vertical rope from side edge
+    const ropeLength = 217;  // Match main rope length
     const ropeSegments = 40;
     const segmentHeight = ropeLength / ropeSegments;
 
+    // Create rope starting from side edge, dropping down
     for (let i = 0; i < ropeSegments; i++) {
-        const y = dropStartY + i * segmentHeight;
-        const segment = Bodies.circle(startX, y, 1, {
+        const x = startX + (finalX - startX) * (i / ropeSegments);  // Interpolate from start to final position
+        const y = screenTopY + i * segmentHeight;
+        const segment = Bodies.circle(x, y, 1, {
             density: 10,
             friction: 0.1,
             frictionAir: 0.01,
@@ -279,8 +284,9 @@ function createImageCardboard(startX) {
         imageRopeBodies.push(segment);
         Composite.add(engine.world, segment);
 
+        // Set initial velocity for drop animation
         if (i > 0) {
-            Body.setVelocity(segment, { x: 0, y: 15 });
+            Body.setVelocity(segment, { x: 0, y: 10 });
         }
 
         if (i > 0) {
@@ -299,7 +305,7 @@ function createImageCardboard(startX) {
 
         if (i === 0) {
             const pin = Constraint.create({
-                pointA: { x: startX, y: startY },
+                pointA: { x: finalX, y: screenTopY },  // Pin to final X position at top
                 bodyB: segment,
                 length: 0,
                 stiffness: 1,
@@ -312,10 +318,10 @@ function createImageCardboard(startX) {
     }
 
     const ropeEnd = imageRopeBodies[imageRopeBodies.length - 1];
-    const cardboardY = ropeEnd.position.y + 80;
+    const cardboardY = ropeEnd.y + 60;
 
     imageCardboardBody = Bodies.rectangle(
-        startX,
+        finalX,
         cardboardY,
         cardboardWidth,
         cardboardHeight,
@@ -325,12 +331,12 @@ function createImageCardboard(startX) {
             frictionAir: 0.015,
             restitution: 0.25,
             chamfer: { radius: 3 },
-            render: { fillStyle: '#f5f3e8' }
+            render: { fillStyle: 'transparent' }  // Transparent background
         }
     );
 
     Composite.add(engine.world, imageCardboardBody);
-    Body.setVelocity(imageCardboardBody, { x: 0, y: 15 });
+    Body.setVelocity(imageCardboardBody, { x: 0, y: 10 });
 
     const pendulumConstraint = Constraint.create({
         bodyA: ropeEnd,
@@ -354,9 +360,9 @@ function createRopeWithText() {
     // Start position for drop animation (way above screen for fast drop)
     const dropStartY = -600;
 
-    // Calculate cardboard dimensions (scaled down to 243x91)
-    const cardboardWidth = 243;
-    const cardboardHeight = 91;
+    // Calculate cardboard dimensions (scaled down by 12% from 243x91)
+    const cardboardWidth = 214;  // 243 * 0.88 = 213.84
+    const cardboardHeight = 80;  // 91 * 0.88 = 80.08
 
     // Pre-generate letter visual properties
     generateLetterVisuals();
@@ -573,8 +579,8 @@ function drawCustom() {
         ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
         ctx.rotate(cardboardBody.angle);
 
-        const cardboardWidth = 243;  // Scaled down to 243
-        const cardboardHeight = 91;  // Scaled down to 91
+        const cardboardWidth = 214;  // Scaled down by 12%
+        const cardboardHeight = 80;  // Scaled down by 12%
 
         // Pseudo-3D: Draw subtle shadow first (depth effect)
         ctx.save();
@@ -683,17 +689,17 @@ function drawCustom() {
         ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
         ctx.rotate(imageCardboardBody.angle);
 
-        const cardboardWidth = 243;
-        const cardboardHeight = 91;
+        const cardboardWidth = 259;  // Scaled up by 21%
+        const cardboardHeight = 97;  // Scaled up by 21%
 
-        // Draw shadow
+        // Draw shadow (subtle)
         ctx.save();
         ctx.translate(3, 3);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
         ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
         ctx.restore();
 
-        // Draw cardboard image
+        // Draw cardboard image (no background, just the image)
         if (cardboardImage && cardboardImage.complete) {
             ctx.drawImage(
                 cardboardImage,
@@ -704,7 +710,7 @@ function drawCustom() {
             );
         }
 
-        // Draw phone image on top
+        // Draw phone image on top (scaled up 21%)
         if (phoneImage && phoneImage.complete) {
             const phoneWidth = cardboardWidth * 0.7;
             const phoneHeight = cardboardHeight * 0.7;
@@ -965,8 +971,8 @@ function checkOffscreen() {
     }
 
     // Cardboard dimensions
-    const cardboardWidth = 243;
-    const cardboardHeight = 91;
+    const cardboardWidth = 214;  // Scaled down by 12%
+    const cardboardHeight = 80;  // Scaled down by 12%
     const halfWidth = cardboardWidth / 2;
     const halfHeight = cardboardHeight / 2;
 
@@ -1015,23 +1021,23 @@ function checkOffscreen() {
     }
 }
 
-// Break the rope (disconnect cardboard from rope)
+// Break the rope (disconnect cardboard from rope and remove rope completely)
 function breakRope() {
-    // Remove all constraints connecting to text cardboard
+    console.log('Rope broke! Removing rope and cardboard is flying away...');
+
+    // Remove all constraints
     allConstraints.forEach(constraint => {
-        if (constraint.bodyA === cardboardBody || constraint.bodyB === cardboardBody) {
-            Composite.remove(engine.world, constraint);
-        }
+        Composite.remove(engine.world, constraint);
     });
+    allConstraints = [];
 
-    // Remove all constraints connecting to image cardboard
-    imageConstraints.forEach(constraint => {
-        if (constraint.bodyA === imageCardboardBody || constraint.bodyB === imageCardboardBody) {
-            Composite.remove(engine.world, constraint);
-        }
+    // Remove all rope bodies (make rope disappear completely)
+    ropeBodies.forEach(body => {
+        Composite.remove(engine.world, body);
     });
+    ropeBodies = [];
 
-    console.log('Rope broke! Cardboard is flying away...');
+    console.log('Rope has completely disappeared');
 }
 
 // Remove all elements
