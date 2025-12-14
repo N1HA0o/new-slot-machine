@@ -56,6 +56,11 @@ let flipDetectionThreshold = 30;  // Degrees of pitch change to trigger flip
 let flipCooldown = 500;  // 500ms cooldown between flips
 let lastFlipTime = 0;
 
+// Rope breaking rotation detection
+let rotationExceeds45 = false;  // Track if rotation exceeds 45°
+let rotation45StartTime = null;  // When rotation first exceeded 45°
+let rotation45Duration = 500;  // 0.5 seconds (500ms) required to break rope
+
 // Images for horizontal mode
 let cardboardImage = null;
 let phoneImage = null;
@@ -238,6 +243,35 @@ function handleOrientation(event) {
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
     const alpha = event.alpha || 0;
+
+    // Detect rotation exceeding 45° for rope breaking (only when cardboard exists and rope not broken)
+    if (cardboardBody && !isOffscreen) {
+        const totalRotation = Math.abs(gamma) + Math.abs(beta);
+        const exceeds45 = totalRotation > 45;
+
+        if (exceeds45) {
+            // Start timer if just exceeded 45°
+            if (!rotation45StartTime) {
+                rotation45StartTime = Date.now();
+                console.log('Rotation exceeded 45° - starting 0.5s timer for rope break');
+            }
+
+            // Check if 0.5 seconds have passed
+            const elapsed = Date.now() - rotation45StartTime;
+            if (elapsed >= rotation45Duration && !isOffscreen) {
+                // Trigger rope break
+                isOffscreen = true;
+                breakRope();
+                console.log('Rotation held >45° for 0.5s - rope breaking!');
+            }
+        } else {
+            // Reset timer if rotation falls below 45°
+            if (rotation45StartTime) {
+                rotation45StartTime = null;
+                console.log('Rotation dropped below 45° - timer reset');
+            }
+        }
+    }
 
     // Detect phone flip motion for slot machine (only when slot machine is active)
     if (slotMachineActive) {
@@ -1044,7 +1078,7 @@ function enforcePositionLimits() {
     }
 }
 
-// Check if elements are offscreen
+// Check if elements are offscreen (for cleanup and image trigger)
 function checkOffscreen() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
@@ -1064,74 +1098,29 @@ function checkOffscreen() {
         return; // Don't break rope in image mode
     }
 
-    // Cardboard dimensions
-    const cardboardWidth = 214;  // Scaled down by 12%
-    const cardboardHeight = 80;  // Scaled down by 12%
-    const halfWidth = cardboardWidth / 2;
-    const halfHeight = cardboardHeight / 2;
+    // Check if cardboard has exited screen completely (for image trigger)
+    // Use simple position-based detection for far offscreen
+    const completelyOffscreen =
+        activeBody.position.y > canvas.height + 500 ||
+        activeBody.position.y < -500 ||
+        activeBody.position.x > canvas.width + 500 ||
+        activeBody.position.x < -500;
 
-    // Calculate cardboard edges (accounting for rotation)
-    const angle = activeBody.angle;
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-
-    // Get the four corners of the cardboard
-    const corners = [
-        { x: -halfWidth, y: -halfHeight },
-        { x: halfWidth, y: -halfHeight },
-        { x: halfWidth, y: halfHeight },
-        { x: -halfWidth, y: halfHeight }
-    ];
-
-    // Transform corners to world coordinates
-    const worldCorners = corners.map(corner => ({
-        x: activeBody.position.x + corner.x * cos - corner.y * sin,
-        y: activeBody.position.y + corner.x * sin + corner.y * cos
-    }));
-
-    // Screen boundary: center ± 760px
-    const centerX = canvas.width / 2;
-    const leftBoundary = centerX - 760;
-    const rightBoundary = centerX + 760;
-
-    // Count how many corners are within horizontal boundaries
-    // Only check X coordinates (left/right edges), ignore Y (top/bottom)
-    let cornersWithinHorizontalBounds = 0;
-    worldCorners.forEach(corner => {
-        if (corner.x >= leftBoundary && corner.x <= rightBoundary) {
-            cornersWithinHorizontalBounds++;
-        }
-    });
-
-    // Break rope when 2 or fewer corners are within horizontal bounds
-    // (meaning 2 or more corners are outside left/right edges)
-    const mostlyOffscreen = cornersWithinHorizontalBounds <= 2;
-
-    // Break rope IMMEDIATELY when any 2 corners outside bounds (no stabilization wait)
-    if (mostlyOffscreen && !isOffscreen) {
-        isOffscreen = true;
-        breakRope();
-        console.log('Rope broke! 2+ corners outside boundary (center ±760px) - cardboard thrown by momentum.');
-    }
-
-    // Track when cardboard completely exits horizontal screen (all 4 corners outside left/right bounds)
-    const completelyOffscreen = cornersWithinHorizontalBounds === 0;
-
-    // Auto-trigger image mode when text cardboard completely exits horizontally (no rotation detection needed)
+    // Auto-trigger image mode when text cardboard completely exits (no rotation detection needed)
     if (completelyOffscreen && !textCardboardExitTime && !pendingImageTrigger && imagesLoaded) {
         textCardboardExitTime = Date.now();
         pendingImageTrigger = true;
-        console.log('Text cardboard completely exited boundary (center ±760px) - will trigger images in 1 second');
+        console.log('Text cardboard completely exited screen - will trigger images in 1 second');
     }
 
-    // Remove everything when far offscreen (after image animation would have completed)
-    const farOffscreen =
-        activeBody.position.y > canvas.height + 1000 ||
-        activeBody.position.y < -1000 ||
-        activeBody.position.x > rightBoundary + 1000 ||
-        activeBody.position.x < leftBoundary - 1000;
+    // Remove everything when very far offscreen (after image animation would have completed)
+    const veryFarOffscreen =
+        activeBody.position.y > canvas.height + 2000 ||
+        activeBody.position.y < -2000 ||
+        activeBody.position.x > canvas.width + 2000 ||
+        activeBody.position.x < -2000;
 
-    if (farOffscreen) {
+    if (veryFarOffscreen) {
         removeAllElements();
     }
 }
