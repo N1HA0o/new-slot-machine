@@ -13,7 +13,7 @@ const config = {
     letterSize: 29,  // Scaled down another 10% from 32
     letterSizeLine2: 25,  // Smaller size for HORIZONTALLY, scaled down 10%
     startY: -80,  // Rope starts above screen (invisible anchor)
-    ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
+    ropeLength: 200,  // Shorter rope to prevent initial offscreen drop
     dropAnimationDuration: 1200  // Drop animation duration in ms
 };
 
@@ -43,6 +43,7 @@ let cardboardBody = null;  // Single cardboard body
 let ropeBodies = [];
 let allConstraints = [];
 let isOffscreen = false;
+let isStableAtPosition = false;  // Track if cardboard has stabilized at 52% position
 
 // Device orientation tracking
 let lastGamma = 0;
@@ -186,8 +187,9 @@ function handleOrientation(event) {
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
 
-    // Check for horizontal rotation (phone turned sideways > 65 degrees)
-    const isPhoneHorizontal = Math.abs(gamma) > 65;
+    // Check for horizontal rotation (phone turned sideways > 75 degrees)
+    // Use gamma for landscape detection (more accurate)
+    const isPhoneHorizontal = Math.abs(gamma) > 75 || Math.abs(beta) > 75;
 
     if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
         if (!horizontalStartTime) {
@@ -223,6 +225,14 @@ function handleOrientation(event) {
 function triggerHorizontalMode() {
     console.log('Horizontal mode triggered! Dropping image cardboard...');
 
+    // Verify images are actually loaded
+    if (!cardboardImage || !phoneImage || !cardboardImage.complete || !phoneImage.complete) {
+        console.error('Images not properly loaded. Cannot trigger horizontal mode.');
+        console.log('Cardboard image:', cardboardImage ? 'exists' : 'missing');
+        console.log('Phone image:', phoneImage ? 'exists' : 'missing');
+        return;
+    }
+
     // Remove existing text-based cardboard
     if (cardboardBody) {
         Composite.remove(engine.world, cardboardBody);
@@ -233,6 +243,7 @@ function triggerHorizontalMode() {
     const dropFromLeft = lastGamma > 0;
     const sideX = dropFromLeft ? 100 : canvas.width - 100;
 
+    console.log('Creating image cardboard at x:', sideX);
     createImageCardboard(sideX);
 }
 
@@ -246,7 +257,7 @@ function createImageCardboard(startX) {
     const cardboardHeight = 91;
 
     // Create vertical rope from top
-    const ropeLength = 280;
+    const ropeLength = 200;  // Match main rope length
     const ropeSegments = 40;
     const segmentHeight = ropeLength / ropeSegments;
 
@@ -903,6 +914,18 @@ function enforcePositionLimits() {
     // Preferred Y position (52% down from top)
     const preferredY = canvas.height * 0.52;
 
+    // Check if cardboard has stabilized at preferred position
+    if (!isStableAtPosition) {
+        const distanceFromPreferred = Math.abs(activeBody.position.y - preferredY);
+        const velocity = Math.sqrt(activeBody.velocity.x ** 2 + activeBody.velocity.y ** 2);
+
+        // Consider stable if within 20px of preferred position and moving slowly
+        if (distanceFromPreferred < 20 && velocity < 2) {
+            isStableAtPosition = true;
+            console.log('Cardboard stabilized at 52% position - rope breaking now enabled');
+        }
+    }
+
     // Apply extremely weak centering force only when very far down (allows complete freedom to swing)
     if (activeBody.position.y > preferredY + 100) {
         const overshoot = activeBody.position.y - (preferredY + 100);
@@ -921,19 +944,25 @@ function checkOffscreen() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
+    // Only check for rope breaking if cardboard has stabilized at 52% position
+    if (!isStableAtPosition) {
+        return; // Don't break rope during initial drop
+    }
+
     const screenMargin = 50;
 
-    // Check if cardboard is going offscreen
+    // Check if ENTIRE cardboard is completely offscreen
     const cardboardOffscreen =
         activeBody.position.y > canvas.height + screenMargin ||
         activeBody.position.y < -screenMargin ||
         activeBody.position.x > canvas.width + screenMargin ||
         activeBody.position.x < -screenMargin;
 
-    // Break rope when cardboard goes offscreen
-    if (cardboardOffscreen && !isOffscreen) {
+    // Break rope ONLY when cardboard is completely offscreen and has been stabilized
+    if (cardboardOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
+        console.log('Rope broke! Cardboard completely left the screen after stabilization.');
     }
 
     // Remove everything when far offscreen
