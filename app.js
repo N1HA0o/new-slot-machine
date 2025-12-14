@@ -10,7 +10,8 @@ const config = {
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
     ropeDamping: 0.5,  // Higher damping for smoother rope motion
-    letterSize: 36,  // Scaled down by 20%
+    letterSize: 32,  // Scaled down 10% from 36
+    letterSizeLine2: 28,  // Smaller size for HORIZONTALLY
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
     dropAnimationDuration: 1200  // Drop animation duration in ms
@@ -47,6 +48,16 @@ let isOffscreen = false;
 let lastGamma = 0;
 let lastBeta = 0;
 
+// Horizontal rotation detection
+let horizontalStartTime = null;
+let isHorizontal = false;
+let hasTriggeredHorizontal = false;
+
+// Images for horizontal mode
+let cardboardImage = null;
+let phoneImage = null;
+let imagesLoaded = false;
+
 // Store letter visual properties for rendering
 let letterVisuals = [];
 
@@ -54,12 +65,50 @@ let letterVisuals = [];
 let dropAnimationStartTime = null;
 let isDropping = true;
 
+// Image-based physics objects
+let imageCardboardBody = null;
+let imageRopeBodies = [];
+let imageConstraints = [];
+
+// Load images for horizontal mode
+function loadImages() {
+    cardboardImage = new Image();
+    cardboardImage.src = '纸板.png';
+    cardboardImage.onload = () => {
+        console.log('Cardboard image loaded');
+        checkImagesLoaded();
+    };
+    cardboardImage.onerror = () => {
+        console.error('Failed to load cardboard image');
+    };
+
+    phoneImage = new Image();
+    phoneImage.src = '手与手机.png';
+    phoneImage.onload = () => {
+        console.log('Phone image loaded');
+        checkImagesLoaded();
+    };
+    phoneImage.onerror = () => {
+        console.error('Failed to load phone image');
+    };
+}
+
+function checkImagesLoaded() {
+    if (cardboardImage.complete && phoneImage.complete) {
+        imagesLoaded = true;
+        console.log('All images loaded successfully');
+    }
+}
+
 // Initialize the application
 function init() {
     canvas = document.getElementById('canvas');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx = canvas.getContext('2d');
+
+    // Load images for horizontal mode
+    loadImages();
 
     // Create engine
     engine = Engine.create();
@@ -137,20 +186,153 @@ function handleOrientation(event) {
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
 
-    // Smooth transitions for natural movement (increased 25% for better response)
-    const smoothFactor = 0.125;  // Increased from 0.1 (25% more responsive)
+    // Check for horizontal rotation (phone turned sideways > 65 degrees)
+    const isPhoneHorizontal = Math.abs(gamma) > 65;
+
+    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
+        if (!horizontalStartTime) {
+            horizontalStartTime = Date.now();
+        } else {
+            const elapsed = Date.now() - horizontalStartTime;
+            if (elapsed >= 1500) {  // 1.5 seconds
+                hasTriggeredHorizontal = true;
+                triggerHorizontalMode();
+            }
+        }
+    } else if (!isPhoneHorizontal) {
+        horizontalStartTime = null;
+    }
+
+    // Smooth transitions for natural movement (increased 37.5% total for better response)
+    const smoothFactor = 0.1375;  // Increased from 0.125 (additional 10% more responsive)
     const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
     const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
     lastGamma = smoothGamma;
     lastBeta = smoothBeta;
 
-    // Increased sensitivity by 25% for more reactive physics
+    // Increased sensitivity by 37.5% total for more reactive physics
     const maxTilt = 50;
-    const gravityStrength = 0.625;  // Increased from 0.5 (25% stronger)
+    const gravityStrength = 0.6875;  // Increased from 0.625 (additional 10% stronger)
 
     engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
     engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
+}
+
+// Trigger horizontal mode - drop image-based cardboard
+function triggerHorizontalMode() {
+    console.log('Horizontal mode triggered! Dropping image cardboard...');
+
+    // Remove existing text-based cardboard
+    if (cardboardBody) {
+        Composite.remove(engine.world, cardboardBody);
+        cardboardBody = null;
+    }
+
+    // Determine which side to drop from (based on gamma direction)
+    const dropFromLeft = lastGamma > 0;
+    const sideX = dropFromLeft ? 100 : canvas.width - 100;
+
+    createImageCardboard(sideX);
+}
+
+// Create cardboard with images
+function createImageCardboard(startX) {
+    const startY = -80;
+    const dropStartY = -600;
+
+    // Calculate dimensions based on cardboard image
+    const cardboardWidth = 270;
+    const cardboardHeight = 101;
+
+    // Create vertical rope from top
+    const ropeLength = 280;
+    const ropeSegments = 40;
+    const segmentHeight = ropeLength / ropeSegments;
+
+    for (let i = 0; i < ropeSegments; i++) {
+        const y = dropStartY + i * segmentHeight;
+        const segment = Bodies.circle(startX, y, 1, {
+            density: 10,
+            friction: 0.1,
+            frictionAir: 0.01,
+            restitution: 0.3,
+            inertia: Infinity,
+            render: {
+                fillStyle: '#b8b8b8',
+                strokeStyle: '#a0a0a0',
+                lineWidth: 0.5
+            }
+        });
+
+        imageRopeBodies.push(segment);
+        Composite.add(engine.world, segment);
+
+        if (i > 0) {
+            Body.setVelocity(segment, { x: 0, y: 15 });
+        }
+
+        if (i > 0) {
+            const constraint = Constraint.create({
+                bodyA: imageRopeBodies[i - 1],
+                bodyB: segment,
+                length: segmentHeight,
+                stiffness: 1,
+                damping: 0.5,
+                render: { visible: false }
+            });
+            constraint.breakingForce = Infinity;
+            imageConstraints.push(constraint);
+            Composite.add(engine.world, constraint);
+        }
+
+        if (i === 0) {
+            const pin = Constraint.create({
+                pointA: { x: startX, y: startY },
+                bodyB: segment,
+                length: 0,
+                stiffness: 1,
+                render: { visible: false }
+            });
+            pin.breakingForce = Infinity;
+            imageConstraints.push(pin);
+            Composite.add(engine.world, pin);
+        }
+    }
+
+    const ropeEnd = imageRopeBodies[imageRopeBodies.length - 1];
+    const cardboardY = ropeEnd.position.y + 80;
+
+    imageCardboardBody = Bodies.rectangle(
+        startX,
+        cardboardY,
+        cardboardWidth,
+        cardboardHeight,
+        {
+            density: 0.004,
+            friction: 0.3,
+            frictionAir: 0.015,
+            restitution: 0.25,
+            chamfer: { radius: 3 },
+            render: { fillStyle: '#f5f3e8' }
+        }
+    );
+
+    Composite.add(engine.world, imageCardboardBody);
+    Body.setVelocity(imageCardboardBody, { x: 0, y: 15 });
+
+    const pendulumConstraint = Constraint.create({
+        bodyA: ropeEnd,
+        bodyB: imageCardboardBody,
+        pointB: { x: 0, y: -cardboardHeight / 2 + 10 },
+        length: 15,
+        stiffness: 1,
+        damping: 0.5,
+        render: { strokeStyle: '#a8a8a8', lineWidth: 1.5 }
+    });
+    pendulumConstraint.breakingForce = Infinity;
+    imageConstraints.push(pendulumConstraint);
+    Composite.add(engine.world, pendulumConstraint);
 }
 
 // Create single rope with cardboard at the end
@@ -161,9 +343,9 @@ function createRopeWithText() {
     // Start position for drop animation (way above screen for fast drop)
     const dropStartY = -600;
 
-    // Calculate cardboard dimensions (adjusted for "HORIZONTALLY")
-    const cardboardWidth = 300;
-    const cardboardHeight = 112;
+    // Calculate cardboard dimensions (scaled down 10% from 300x112)
+    const cardboardWidth = 270;
+    const cardboardHeight = 101;
 
     // Pre-generate letter visual properties
     generateLetterVisuals();
@@ -380,8 +562,8 @@ function drawCustom() {
         ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
         ctx.rotate(cardboardBody.angle);
 
-        const cardboardWidth = 300;  // Adjusted for "HORIZONTALLY"
-        const cardboardHeight = 112;  // Scaled down by 20%
+        const cardboardWidth = 270;  // Scaled down 10% from 300
+        const cardboardHeight = 101;  // Scaled down 10% from 112
 
         // Pseudo-3D: Draw subtle shadow first (depth effect)
         ctx.save();
@@ -442,20 +624,106 @@ function drawCustom() {
         ctx.restore();
     }
 
+    // Draw image-based rope if exists
+    if (imageRopeBodies.length > 2) {
+        ctx.beginPath();
+        ctx.moveTo(imageRopeBodies[0].position.x, imageRopeBodies[0].position.y);
+
+        for (let i = 0; i < imageRopeBodies.length - 1; i++) {
+            const p0 = imageRopeBodies[Math.max(0, i - 1)];
+            const p1 = imageRopeBodies[i];
+            const p2 = imageRopeBodies[i + 1];
+            const p3 = imageRopeBodies[Math.min(imageRopeBodies.length - 1, i + 2)];
+
+            const steps = 8;
+            for (let t = 0; t <= steps; t++) {
+                const s = t / steps;
+                const s2 = s * s;
+                const s3 = s2 * s;
+
+                const x = 0.5 * (
+                    (2 * p1.position.x) +
+                    (-p0.position.x + p2.position.x) * s +
+                    (2 * p0.position.x - 5 * p1.position.x + 4 * p2.position.x - p3.position.x) * s2 +
+                    (-p0.position.x + 3 * p1.position.x - 3 * p2.position.x + p3.position.x) * s3
+                );
+
+                const y = 0.5 * (
+                    (2 * p1.position.y) +
+                    (-p0.position.y + p2.position.y) * s +
+                    (2 * p0.position.y - 5 * p1.position.y + 4 * p2.position.y - p3.position.y) * s2 +
+                    (-p0.position.y + 3 * p1.position.y - 3 * p2.position.y + p3.position.y) * s3
+                );
+
+                ctx.lineTo(x, y);
+            }
+        }
+
+        ctx.strokeStyle = '#aaaaaa';
+        ctx.lineWidth = 1.8;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+    }
+
+    // Draw image-based cardboard
+    if (imageCardboardBody && imagesLoaded) {
+        ctx.save();
+        ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
+        ctx.rotate(imageCardboardBody.angle);
+
+        const cardboardWidth = 270;
+        const cardboardHeight = 101;
+
+        // Draw shadow
+        ctx.save();
+        ctx.translate(3, 3);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
+        ctx.restore();
+
+        // Draw cardboard image
+        if (cardboardImage && cardboardImage.complete) {
+            ctx.drawImage(
+                cardboardImage,
+                -cardboardWidth / 2,
+                -cardboardHeight / 2,
+                cardboardWidth,
+                cardboardHeight
+            );
+        }
+
+        // Draw phone image on top
+        if (phoneImage && phoneImage.complete) {
+            const phoneWidth = cardboardWidth * 0.7;
+            const phoneHeight = cardboardHeight * 0.7;
+            ctx.drawImage(
+                phoneImage,
+                -phoneWidth / 2,
+                -phoneHeight / 2,
+                phoneWidth,
+                phoneHeight
+            );
+        }
+
+        ctx.restore();
+    }
+
     ctx.restore();
 }
 
 // Draw ransom note style letters on cardboard
 function drawLettersOnCardboard(cardboardWidth, cardboardHeight) {
     const fontSize = config.letterSize;
+    const fontSize2 = config.letterSizeLine2;
     const line1 = config.line1;
     const line2 = config.line2;
 
     // Line 1: "TURN"
-    drawTextLine(line1, 0, -25, 0, fontSize);
+    drawTextLine(line1, 0, -22, 0, fontSize);
 
-    // Line 2: "HORIZONTAL"
-    drawTextLine(line2, line1.length, 25, 1, fontSize);
+    // Line 2: "HORIZONTALLY" (smaller font)
+    drawTextLine(line2, line1.length, 22, 1, fontSize2);
 }
 
 // Draw a single line of text with collage effect
@@ -627,50 +895,76 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
     }
 }
 
-// Enforce position limits - cardboard cannot go below screen center-top
+// Enforce position limits - cardboard has gentle centering force
 function enforcePositionLimits() {
-    if (!cardboardBody) return;
+    const activeBody = cardboardBody || imageCardboardBody;
+    if (!activeBody) return;
 
-    // Maximum Y position (screen center-top area)
-    const maxY = canvas.height * 0.47;  // 47% down from top
+    // Preferred Y position (52.5% down from top)
+    const preferredY = canvas.height * 0.525;
 
-    // If cardboard goes too low, apply smooth restoring force instead of hard reset
-    if (cardboardBody.position.y > maxY) {
-        const overshoot = cardboardBody.position.y - maxY;
+    // Apply very gentle centering force (allows swinging out but prefers center)
+    if (activeBody.position.y > preferredY) {
+        const overshoot = activeBody.position.y - preferredY;
 
-        // Apply gentle upward force proportional to overshoot (spring-like)
-        const restoreForce = overshoot * 0.001;
-        Body.applyForce(cardboardBody, cardboardBody.position, {
+        // Very weak restoring force - allows free swinging
+        const restoreForce = overshoot * 0.0003;  // Much weaker than before
+        Body.applyForce(activeBody, activeBody.position, {
             x: 0,
             y: -restoreForce
         });
-
-        // Smoothly dampen downward velocity
-        if (cardboardBody.velocity.y > 0) {
-            Body.setVelocity(cardboardBody, {
-                x: cardboardBody.velocity.x,
-                y: cardboardBody.velocity.y * 0.85  // Gentle damping instead of harsh 0.3
-            });
-        }
     }
 }
 
 // Check if elements are offscreen
 function checkOffscreen() {
-    if (isOffscreen || !cardboardBody) return;
+    const activeBody = cardboardBody || imageCardboardBody;
+    if (!activeBody) return;
 
-    const screenMargin = 250;
+    const screenMargin = 50;
 
+    // Check if cardboard is going offscreen
     const cardboardOffscreen =
-        cardboardBody.position.y > canvas.height + screenMargin ||
-        cardboardBody.position.y < -screenMargin ||
-        cardboardBody.position.x > canvas.width + screenMargin ||
-        cardboardBody.position.x < -screenMargin;
+        activeBody.position.y > canvas.height + screenMargin ||
+        activeBody.position.y < -screenMargin ||
+        activeBody.position.x > canvas.width + screenMargin ||
+        activeBody.position.x < -screenMargin;
 
-    if (cardboardOffscreen) {
+    // Break rope when cardboard goes offscreen
+    if (cardboardOffscreen && !isOffscreen) {
         isOffscreen = true;
+        breakRope();
+    }
+
+    // Remove everything when far offscreen
+    const farOffscreen =
+        activeBody.position.y > canvas.height + 500 ||
+        activeBody.position.y < -500 ||
+        activeBody.position.x > canvas.width + 500 ||
+        activeBody.position.x < -500;
+
+    if (farOffscreen) {
         removeAllElements();
     }
+}
+
+// Break the rope (disconnect cardboard from rope)
+function breakRope() {
+    // Remove all constraints connecting to text cardboard
+    allConstraints.forEach(constraint => {
+        if (constraint.bodyA === cardboardBody || constraint.bodyB === cardboardBody) {
+            Composite.remove(engine.world, constraint);
+        }
+    });
+
+    // Remove all constraints connecting to image cardboard
+    imageConstraints.forEach(constraint => {
+        if (constraint.bodyA === imageCardboardBody || constraint.bodyB === imageCardboardBody) {
+            Composite.remove(engine.world, constraint);
+        }
+    });
+
+    console.log('Rope broke! Cardboard is flying away...');
 }
 
 // Remove all elements
@@ -680,11 +974,20 @@ function removeAllElements() {
         cardboardBody = null;
     }
 
+    if (imageCardboardBody) {
+        Composite.remove(engine.world, imageCardboardBody);
+        imageCardboardBody = null;
+    }
+
     ropeBodies.forEach(body => Composite.remove(engine.world, body));
     allConstraints.forEach(constraint => Composite.remove(engine.world, constraint));
+    imageRopeBodies.forEach(body => Composite.remove(engine.world, body));
+    imageConstraints.forEach(constraint => Composite.remove(engine.world, constraint));
 
     ropeBodies = [];
     allConstraints = [];
+    imageRopeBodies = [];
+    imageConstraints = [];
     letterVisuals = [];
 
     console.log('All elements removed - cardboard has disappeared');
