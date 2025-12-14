@@ -13,7 +13,7 @@ const config = {
     letterSize: 29,  // Scaled down another 10% from 32
     letterSizeLine2: 25,  // Smaller size for HORIZONTALLY, scaled down 10%
     startY: -80,  // Rope starts above screen (invisible anchor)
-    ropeLength: 200,  // Shorter rope to prevent initial offscreen drop
+    ropeLength: 228,  // Increased by 14% from 200 (200 * 1.14 = 228)
     dropAnimationDuration: 1200  // Drop animation duration in ms
 };
 
@@ -191,13 +191,16 @@ function handleOrientation(event) {
     // Use gamma for landscape detection (more accurate)
     const isPhoneHorizontal = Math.abs(gamma) > 75 || Math.abs(beta) > 75;
 
-    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
+    // ONLY trigger horizontal mode if rope has already broken (isOffscreen is true)
+    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded && isOffscreen) {
         if (!horizontalStartTime) {
             horizontalStartTime = Date.now();
+            console.log('Horizontal rotation detected - waiting 1.5 seconds...');
         } else {
             const elapsed = Date.now() - horizontalStartTime;
             if (elapsed >= 1500) {  // 1.5 seconds
                 hasTriggeredHorizontal = true;
+                console.log('1.5 seconds elapsed - triggering horizontal mode!');
                 triggerHorizontalMode();
             }
         }
@@ -239,6 +242,10 @@ function triggerHorizontalMode() {
         cardboardBody = null;
     }
 
+    // Reset stability flag for new cardboard
+    isStableAtPosition = false;
+    isOffscreen = false;
+
     // Determine which side to drop from (based on gamma direction)
     const dropFromLeft = lastGamma > 0;
     const sideX = dropFromLeft ? 100 : canvas.width - 100;
@@ -257,7 +264,7 @@ function createImageCardboard(startX) {
     const cardboardHeight = 91;
 
     // Create vertical rope from top
-    const ropeLength = 200;  // Match main rope length
+    const ropeLength = 228;  // Match main rope length (increased by 14%)
     const ropeSegments = 40;
     const segmentHeight = ropeLength / ropeSegments;
 
@@ -911,8 +918,8 @@ function enforcePositionLimits() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Preferred Y position (52% down from top)
-    const preferredY = canvas.height * 0.52;
+    // Preferred Y position (55% down from top)
+    const preferredY = canvas.height * 0.55;
 
     // Check if cardboard has stabilized at preferred position
     if (!isStableAtPosition) {
@@ -944,25 +951,47 @@ function checkOffscreen() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Only check for rope breaking if cardboard has stabilized at 52% position
+    // Only check for rope breaking if cardboard has stabilized at 55% position
     if (!isStableAtPosition) {
         return; // Don't break rope during initial drop
     }
 
-    const screenMargin = 50;
+    // Cardboard dimensions
+    const cardboardWidth = 243;
+    const cardboardHeight = 91;
+    const halfWidth = cardboardWidth / 2;
+    const halfHeight = cardboardHeight / 2;
 
-    // Check if ENTIRE cardboard is completely offscreen
-    const cardboardOffscreen =
-        activeBody.position.y > canvas.height + screenMargin ||
-        activeBody.position.y < -screenMargin ||
-        activeBody.position.x > canvas.width + screenMargin ||
-        activeBody.position.x < -screenMargin;
+    // Calculate cardboard edges (accounting for rotation)
+    const angle = activeBody.angle;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
 
-    // Break rope ONLY when cardboard is completely offscreen and has been stabilized
-    if (cardboardOffscreen && !isOffscreen && isStableAtPosition) {
+    // Get the four corners of the cardboard
+    const corners = [
+        { x: -halfWidth, y: -halfHeight },
+        { x: halfWidth, y: -halfHeight },
+        { x: halfWidth, y: halfHeight },
+        { x: -halfWidth, y: halfHeight }
+    ];
+
+    // Transform corners to world coordinates
+    const worldCorners = corners.map(corner => ({
+        x: activeBody.position.x + corner.x * cos - corner.y * sin,
+        y: activeBody.position.y + corner.x * sin + corner.y * cos
+    }));
+
+    // Check if ALL corners are outside the screen (ENTIRE cardboard is offscreen)
+    const allCornersOffscreen = worldCorners.every(corner => {
+        return corner.x < 0 || corner.x > canvas.width ||
+               corner.y < 0 || corner.y > canvas.height;
+    });
+
+    // Break rope ONLY when entire cardboard is completely offscreen and has been stabilized
+    if (allCornersOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! Cardboard completely left the screen after stabilization.');
+        console.log('Rope broke! Entire cardboard left the screen after stabilization.');
     }
 
     // Remove everything when far offscreen
