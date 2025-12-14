@@ -1049,11 +1049,6 @@ function checkOffscreen() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Only check for rope breaking if cardboard has stabilized at 57% position
-    if (!isStableAtPosition) {
-        return; // Don't break rope during initial drop
-    }
-
     // If in image mode, rope NEVER breaks - skip all breaking logic
     if (isImageMode) {
         // Still remove if extremely far offscreen
@@ -1094,14 +1089,16 @@ function checkOffscreen() {
         y: activeBody.position.y + corner.x * sin + corner.y * cos
     }));
 
-    // Use 1320px as horizontal screen boundary (iPhone 16 Pro Max reference)
-    const horizontalBoundary = 1320;
+    // Screen boundary: center ± 760px
+    const centerX = canvas.width / 2;
+    const leftBoundary = centerX - 760;
+    const rightBoundary = centerX + 760;
 
-    // Count how many corners are within horizontal boundaries (0 to 1320px)
+    // Count how many corners are within horizontal boundaries
     // Only check X coordinates (left/right edges), ignore Y (top/bottom)
     let cornersWithinHorizontalBounds = 0;
     worldCorners.forEach(corner => {
-        if (corner.x >= 0 && corner.x <= horizontalBoundary) {
+        if (corner.x >= leftBoundary && corner.x <= rightBoundary) {
             cornersWithinHorizontalBounds++;
         }
     });
@@ -1110,11 +1107,11 @@ function checkOffscreen() {
     // (meaning 2 or more corners are outside left/right edges)
     const mostlyOffscreen = cornersWithinHorizontalBounds <= 2;
 
-    // Break rope when 2+ corners outside horizontal bounds (left/right edges)
-    if (mostlyOffscreen && !isOffscreen && isStableAtPosition) {
+    // Break rope IMMEDIATELY when any 2 corners outside bounds (no stabilization wait)
+    if (mostlyOffscreen && !isOffscreen) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! 2+ corners outside 1320px horizontal boundary - rope fading, cardboard thrown by momentum.');
+        console.log('Rope broke! 2+ corners outside boundary (center ±760px) - cardboard thrown by momentum.');
     }
 
     // Track when cardboard completely exits horizontal screen (all 4 corners outside left/right bounds)
@@ -1124,15 +1121,15 @@ function checkOffscreen() {
     if (completelyOffscreen && !textCardboardExitTime && !pendingImageTrigger && imagesLoaded) {
         textCardboardExitTime = Date.now();
         pendingImageTrigger = true;
-        console.log('Text cardboard completely exited 1320px horizontal boundary - will trigger images in 1 second');
+        console.log('Text cardboard completely exited boundary (center ±760px) - will trigger images in 1 second');
     }
 
     // Remove everything when far offscreen (after image animation would have completed)
     const farOffscreen =
         activeBody.position.y > canvas.height + 1000 ||
         activeBody.position.y < -1000 ||
-        activeBody.position.x > horizontalBoundary + 1000 ||
-        activeBody.position.x < -1000;
+        activeBody.position.x > rightBoundary + 1000 ||
+        activeBody.position.x < leftBoundary - 1000;
 
     if (farOffscreen) {
         removeAllElements();
