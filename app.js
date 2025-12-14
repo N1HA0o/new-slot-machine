@@ -1094,40 +1094,44 @@ function checkOffscreen() {
         y: activeBody.position.y + corner.x * sin + corner.y * cos
     }));
 
-    // Check if 3/4 or more of cardboard is offscreen (count visible corners)
-    let visibleCorners = 0;
+    // Use 1320px as horizontal screen boundary (iPhone 16 Pro Max reference)
+    const horizontalBoundary = 1320;
+
+    // Count how many corners are within horizontal boundaries (0 to 1320px)
+    // Only check X coordinates (left/right edges), ignore Y (top/bottom)
+    let cornersWithinHorizontalBounds = 0;
     worldCorners.forEach(corner => {
-        if (corner.x >= 0 && corner.x <= canvas.width &&
-            corner.y >= 0 && corner.y <= canvas.height) {
-            visibleCorners++;
+        if (corner.x >= 0 && corner.x <= horizontalBoundary) {
+            cornersWithinHorizontalBounds++;
         }
     });
 
-    // Break rope when 2 or fewer corners are visible (1/2 or more is offscreen)
-    const mostlyOffscreen = visibleCorners <= 2;
+    // Break rope when 2 or fewer corners are within horizontal bounds
+    // (meaning 2 or more corners are outside left/right edges)
+    const mostlyOffscreen = cornersWithinHorizontalBounds <= 2;
 
-    // Break rope when 1/2+ of cardboard is offscreen and has been stabilized (any 2 corners outside)
+    // Break rope when 2+ corners outside horizontal bounds (left/right edges)
     if (mostlyOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! Any 2 corners outside screen - rope fading and cardboard thrown by momentum.');
+        console.log('Rope broke! 2+ corners outside 1320px horizontal boundary - rope fading, cardboard thrown by momentum.');
     }
 
-    // Track when cardboard completely exits screen (all 4 corners outside)
-    const completelyOffscreen = visibleCorners === 0;
+    // Track when cardboard completely exits horizontal screen (all 4 corners outside left/right bounds)
+    const completelyOffscreen = cornersWithinHorizontalBounds === 0;
 
-    // Auto-trigger image mode when text cardboard completely exits (no rotation detection needed)
+    // Auto-trigger image mode when text cardboard completely exits horizontally (no rotation detection needed)
     if (completelyOffscreen && !textCardboardExitTime && !pendingImageTrigger && imagesLoaded) {
         textCardboardExitTime = Date.now();
         pendingImageTrigger = true;
-        console.log('Text cardboard completely exited screen - will trigger images in 1 second');
+        console.log('Text cardboard completely exited 1320px horizontal boundary - will trigger images in 1 second');
     }
 
     // Remove everything when far offscreen (after image animation would have completed)
     const farOffscreen =
         activeBody.position.y > canvas.height + 1000 ||
         activeBody.position.y < -1000 ||
-        activeBody.position.x > canvas.width + 1000 ||
+        activeBody.position.x > horizontalBoundary + 1000 ||
         activeBody.position.x < -1000;
 
     if (farOffscreen) {
