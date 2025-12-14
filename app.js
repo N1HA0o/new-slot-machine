@@ -73,11 +73,22 @@ let imageRopeBodies = [];
 let imageConstraints = [];
 let isImageMode = false;  // Track if we're in image mode (rope never breaks)
 
-// Image reveal animation
+// Image reveal animation (horizontal movement from side to center)
 let imageRevealStartTime = null;
 let imageRevealDuration = 2000;  // 2 seconds
-let imageStartY = 0;  // Will be set based on screen midpoint
-let imageFinalY = 0;  // Will be calculated
+let imageStartX = 0;  // Will be set based on side edge
+let imageFinalX = 0;  // Will be calculated (screen center)
+let imageDropFromLeft = false;  // Track which side images drop from
+
+// Rope breaking fade animation
+let ropeBreakStartTime = null;
+let ropeFadeDuration = 100;  // 0.1 seconds (100ms)
+let ropeOpacity = 1.0;  // Current rope opacity
+
+// Text cardboard exit tracking for delayed image trigger
+let textCardboardExitTime = null;
+let imageTriggerDelay = 1000;  // 1 second delay after text cardboard exits
+let pendingImageTrigger = false;  // Track if we're waiting to trigger images
 
 // Load images for horizontal mode
 function loadImages() {
@@ -165,6 +176,8 @@ function init() {
         checkOffscreen();
         enforcePositionLimits();
         updateImageRevealAnimation();
+        updateRopeFade();
+        checkDelayedImageTrigger();
     });
 
     // Request motion permission for iOS
@@ -210,11 +223,11 @@ function handleOrientation(event) {
     // Use gamma for landscape detection (more accurate)
     const isPhoneHorizontal = Math.abs(gamma) > 75 || Math.abs(beta) > 75;
 
-    // Trigger horizontal mode IMMEDIATELY when rotated > 75 degrees (no waiting, no rope break required)
+    // Mark that horizontal rotation was detected (will trigger after delay in checkOffscreen)
     if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
         hasTriggeredHorizontal = true;
-        console.log('Horizontal rotation >75° detected - triggering image cardboard immediately!');
-        triggerHorizontalMode();
+        imageDropFromLeft = lastGamma > 0;  // Store which side to drop from
+        console.log('Horizontal rotation >75° detected - will trigger after text cardboard exits');
     }
 
     // Smooth transitions for natural movement (increased 8% for better response)
@@ -271,26 +284,26 @@ function triggerHorizontalMode() {
     createImageCardboard(dropFromLeft);
 }
 
-// Create image display (no rope, just images slowly revealing from side)
+// Create image display (no rope, images slide horizontally from side to center)
 function createImageCardboard(dropFromLeft) {
     // Calculate dimensions (scaled up by 21% from 214x80)
+    // Note: After 90° rotation, width and height are swapped visually
     const cardboardWidth = 259;  // 214 * 1.21 = 258.94
     const cardboardHeight = 97;  // 80 * 1.21 = 96.8
 
-    // Position at side edge midpoint
+    // Position at vertical midpoint, horizontal edge
     const sideMidpointY = canvas.height / 2;  // Middle of screen height
-    const imageX = dropFromLeft ? 50 : canvas.width - 50;  // 50px from edge
 
-    // Start position (above midpoint, offscreen)
-    imageStartY = sideMidpointY - cardboardHeight;  // Start with image above midpoint
+    // Start position (at side edge)
+    imageStartX = dropFromLeft ? -cardboardHeight : canvas.width + cardboardHeight;  // Start offscreen (use height since rotated)
 
-    // Final position (at midpoint)
-    imageFinalY = sideMidpointY;
+    // Final position (screen center)
+    imageFinalX = canvas.width / 2;
 
     // Create a static body (no physics, just for rendering position)
     imageCardboardBody = Bodies.rectangle(
-        imageX,
-        imageStartY,  // Start above screen
+        imageStartX,  // Start offscreen at side
+        sideMidpointY,  // At vertical midpoint
         cardboardWidth,
         cardboardHeight,
         {
@@ -301,32 +314,32 @@ function createImageCardboard(dropFromLeft) {
 
     Composite.add(engine.world, imageCardboardBody);
 
-    console.log('Image display created: x=' + imageX + ', starting reveal from y=' + imageStartY);
+    console.log('Image display created: starting from x=' + imageStartX + ' to ' + imageFinalX + ', at y=' + sideMidpointY);
 }
 
-// Update image reveal animation (2 seconds slow descent)
+// Update image reveal animation (2 seconds horizontal slide from side to center)
 function updateImageRevealAnimation() {
     if (!imageRevealStartTime || !imageCardboardBody) return;
 
     const elapsed = Date.now() - imageRevealStartTime;
     const progress = Math.min(elapsed / imageRevealDuration, 1);  // 0 to 1
 
-    // Ease out cubic for smooth deceleration
+    // Ease out cubic for smooth deceleration (starts fast, slows down at end)
     const easedProgress = 1 - Math.pow(1 - progress, 3);
 
-    // Calculate current Y position
-    const currentY = imageStartY + (imageFinalY - imageStartY) * easedProgress;
+    // Calculate current X position (horizontal movement)
+    const currentX = imageStartX + (imageFinalX - imageStartX) * easedProgress;
 
     // Update body position
     Body.setPosition(imageCardboardBody, {
-        x: imageCardboardBody.position.x,
-        y: currentY
+        x: currentX,
+        y: imageCardboardBody.position.y  // Y stays constant
     });
 
     // Stop animation when complete
     if (progress >= 1) {
         imageRevealStartTime = null;
-        console.log('Image reveal animation complete');
+        console.log('Image reveal animation complete - images at screen center');
     }
 }
 
@@ -486,8 +499,11 @@ function measureLetterWidth(letter, fontSize) {
 function drawCustom() {
     ctx.save();
 
-    // Draw rope as very smooth Catmull-Rom spline
-    if (ropeBodies.length > 2) {
+    // Draw rope as very smooth Catmull-Rom spline with fade effect
+    if (ropeBodies.length > 2 && ropeOpacity > 0) {
+        ctx.save();
+        ctx.globalAlpha = ropeOpacity;  // Apply fade opacity
+
         ctx.beginPath();
 
         // Start from first point
@@ -530,26 +546,35 @@ function drawCustom() {
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
+
+        ctx.restore();
     }
 
-    // Draw rope-to-cardboard connection
-    allConstraints.forEach(constraint => {
-        if (constraint.render.visible !== false && constraint.bodyA && constraint.bodyB) {
-            const isRopeConnection = ropeBodies.includes(constraint.bodyA) && constraint.bodyB === cardboardBody;
-            if (isRopeConnection) {
-                ctx.beginPath();
-                ctx.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
-                const attachPoint = {
-                    x: cardboardBody.position.x + constraint.pointB.x * Math.cos(cardboardBody.angle) - constraint.pointB.y * Math.sin(cardboardBody.angle),
-                    y: cardboardBody.position.y + constraint.pointB.x * Math.sin(cardboardBody.angle) + constraint.pointB.y * Math.cos(cardboardBody.angle)
-                };
-                ctx.lineTo(attachPoint.x, attachPoint.y);
-                ctx.strokeStyle = '#a8a8a8';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
+    // Draw rope-to-cardboard connection (with fade effect)
+    if (ropeOpacity > 0) {
+        ctx.save();
+        ctx.globalAlpha = ropeOpacity;
+
+        allConstraints.forEach(constraint => {
+            if (constraint.render.visible !== false && constraint.bodyA && constraint.bodyB) {
+                const isRopeConnection = ropeBodies.includes(constraint.bodyA) && constraint.bodyB === cardboardBody;
+                if (isRopeConnection) {
+                    ctx.beginPath();
+                    ctx.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
+                    const attachPoint = {
+                        x: cardboardBody.position.x + constraint.pointB.x * Math.cos(cardboardBody.angle) - constraint.pointB.y * Math.sin(cardboardBody.angle),
+                        y: cardboardBody.position.y + constraint.pointB.x * Math.sin(cardboardBody.angle) + constraint.pointB.y * Math.cos(cardboardBody.angle)
+                    };
+                    ctx.lineTo(attachPoint.x, attachPoint.y);
+                    ctx.strokeStyle = '#a8a8a8';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
             }
-        }
-    });
+        });
+
+        ctx.restore();
+    }
 
     // Draw cardboard with ransom note letters
     if (cardboardBody) {
@@ -661,7 +686,7 @@ function drawCustom() {
         ctx.stroke();
     }
 
-    // Draw image-based cardboard
+    // Draw image-based cardboard (rotated 90° right with grip image)
     if (imageCardboardBody && imagesLoaded) {
         ctx.save();
         ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
@@ -670,34 +695,62 @@ function drawCustom() {
         const cardboardWidth = 259;  // Scaled up by 21%
         const cardboardHeight = 97;  // Scaled up by 21%
 
-        // Draw shadow (subtle)
+        // Rotate 90° clockwise (Math.PI / 2)
+        ctx.rotate(Math.PI / 2);
+
+        // After rotation, dimensions swap visually
+        // Draw shadow (subtle) - now rotated
         ctx.save();
         ctx.translate(3, 3);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-        ctx.fillRect(-cardboardWidth / 2, -cardboardHeight / 2, cardboardWidth, cardboardHeight);
+        ctx.fillRect(-cardboardHeight / 2, -cardboardWidth / 2, cardboardHeight, cardboardWidth);
         ctx.restore();
 
-        // Draw cardboard image (no background, just the image)
+        // Layer 1: Draw cardboard image (bottom layer, rotated)
         if (cardboardImage && cardboardImage.complete) {
             ctx.drawImage(
                 cardboardImage,
-                -cardboardWidth / 2,
                 -cardboardHeight / 2,
-                cardboardWidth,
-                cardboardHeight
+                -cardboardWidth / 2,
+                cardboardHeight,
+                cardboardWidth
             );
         }
 
-        // Draw phone image on top (scaled up 21%)
+        // Layer 2: Draw phone image on top (middle layer, rotated, scaled 70%)
         if (phoneImage && phoneImage.complete) {
-            const phoneWidth = cardboardWidth * 0.7;
-            const phoneHeight = cardboardHeight * 0.7;
+            const phoneW = cardboardHeight * 0.7;
+            const phoneH = cardboardWidth * 0.7;
             ctx.drawImage(
                 phoneImage,
-                -phoneWidth / 2,
-                -phoneHeight / 2,
-                phoneWidth,
-                phoneHeight
+                -phoneW / 2,
+                -phoneH / 2,
+                phoneW,
+                phoneH
+            );
+        }
+
+        // Layer 3: Draw grip image (top layer, rotated, 6% overlap)
+        // Grip bottom overlaps with cardboard top, both center-aligned
+        if (gripImage && gripImage.complete) {
+            // Get natural image dimensions or use cardboard size as reference
+            const gripW = cardboardHeight * 0.8;  // Reasonable size for grip
+            const gripH = cardboardWidth * 0.8;
+
+            // Calculate 6% overlap: grip bottom overlaps with cardboard top
+            // cardboardTop is at -cardboardWidth/2
+            // grip should be positioned so its bottom (gripH/2) overlaps by 6%
+            const overlapAmount = cardboardHeight * 0.06;
+
+            // Position grip so its bottom edge overlaps with cardboard top edge
+            const gripY = -cardboardWidth / 2 - gripH / 2 + overlapAmount;
+
+            ctx.drawImage(
+                gripImage,
+                -gripW / 2,  // Center horizontally
+                gripY,       // Position with 6% overlap
+                gripW,
+                gripH
             );
         }
 
@@ -985,42 +1038,84 @@ function checkOffscreen() {
     // Break rope when 2 or fewer corners are visible (1/2 or more is offscreen)
     const mostlyOffscreen = visibleCorners <= 2;
 
-    // Break rope when 1/2+ of cardboard is offscreen and has been stabilized
+    // Break rope when 1/2+ of cardboard is offscreen and has been stabilized (any 2 corners outside)
     if (mostlyOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! 1/2+ of cardboard is offscreen - rope and cardboard disappearing.');
+        console.log('Rope broke! Any 2 corners outside screen - rope fading and cardboard thrown by momentum.');
     }
 
-    // Remove everything when far offscreen
+    // Track when cardboard completely exits screen (all 4 corners outside)
+    const completelyOffscreen = visibleCorners === 0;
+
+    if (completelyOffscreen && !textCardboardExitTime && hasTriggeredHorizontal && !pendingImageTrigger) {
+        textCardboardExitTime = Date.now();
+        pendingImageTrigger = true;
+        console.log('Text cardboard completely exited screen - will trigger images in 1 second');
+    }
+
+    // Remove everything when far offscreen (after image animation would have completed)
     const farOffscreen =
-        activeBody.position.y > canvas.height + 500 ||
-        activeBody.position.y < -500 ||
-        activeBody.position.x > canvas.width + 500 ||
-        activeBody.position.x < -500;
+        activeBody.position.y > canvas.height + 1000 ||
+        activeBody.position.y < -1000 ||
+        activeBody.position.x > canvas.width + 1000 ||
+        activeBody.position.x < -1000;
 
     if (farOffscreen) {
         removeAllElements();
     }
 }
 
-// Break the rope (disconnect cardboard from rope and remove rope completely)
+// Break the rope (disconnect cardboard from rope and start fade animation)
 function breakRope() {
-    console.log('Rope broke! Removing rope and cardboard is flying away...');
+    console.log('Rope broke! Starting 0.1s fade animation - cardboard thrown by momentum');
 
-    // Remove all constraints
+    // Start rope fade animation
+    ropeBreakStartTime = Date.now();
+
+    // Remove all constraints (so cardboard flies free with momentum)
     allConstraints.forEach(constraint => {
         Composite.remove(engine.world, constraint);
     });
     allConstraints = [];
 
-    // Remove all rope bodies (make rope disappear completely)
-    ropeBodies.forEach(body => {
-        Composite.remove(engine.world, body);
-    });
-    ropeBodies = [];
+    // Don't remove rope bodies yet - they'll fade out over 0.1s
+    console.log('Constraints removed - cardboard flying with momentum, rope fading out');
+}
 
-    console.log('Rope has completely disappeared');
+// Update rope fade animation
+function updateRopeFade() {
+    if (!ropeBreakStartTime) return;
+
+    const elapsed = Date.now() - ropeBreakStartTime;
+    const progress = Math.min(elapsed / ropeFadeDuration, 1);  // 0 to 1
+
+    // Linear fade from 1.0 to 0.0
+    ropeOpacity = 1.0 - progress;
+
+    // When fade complete, remove rope bodies completely
+    if (progress >= 1) {
+        ropeBodies.forEach(body => {
+            Composite.remove(engine.world, body);
+        });
+        ropeBodies = [];
+        ropeBreakStartTime = null;
+        ropeOpacity = 0;
+        console.log('Rope fade complete - rope removed from scene');
+    }
+}
+
+// Check if it's time to trigger image mode (1 second after text cardboard exits)
+function checkDelayedImageTrigger() {
+    if (!pendingImageTrigger || !textCardboardExitTime) return;
+
+    const elapsed = Date.now() - textCardboardExitTime;
+
+    if (elapsed >= imageTriggerDelay) {
+        pendingImageTrigger = false;
+        console.log('1 second elapsed - triggering image mode now!');
+        triggerHorizontalMode();
+    }
 }
 
 // Remove all elements
