@@ -10,8 +10,8 @@ const config = {
     ropeSegments: 40,
     ropeStiffness: 1.0,  // Completely rigid - no stretch
     ropeDamping: 0.5,  // Higher damping for smoother rope motion
-    letterSize: 32,  // Scaled down 10% from 36
-    letterSizeLine2: 28,  // Smaller size for HORIZONTALLY
+    letterSize: 29,  // Scaled down another 10% from 32
+    letterSizeLine2: 25,  // Smaller size for HORIZONTALLY, scaled down 10%
     startY: -80,  // Rope starts above screen (invisible anchor)
     ropeLength: 280,  // Longer rope so cardboard hangs at screen center-top
     dropAnimationDuration: 1200  // Drop animation duration in ms
@@ -203,17 +203,17 @@ function handleOrientation(event) {
         horizontalStartTime = null;
     }
 
-    // Smooth transitions for natural movement (increased 37.5% total for better response)
-    const smoothFactor = 0.1375;  // Increased from 0.125 (additional 10% more responsive)
+    // Smooth transitions for natural movement (increased 8% for better response)
+    const smoothFactor = 0.135;  // Increased from 0.125 (8% more responsive)
     const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
     const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
     lastGamma = smoothGamma;
     lastBeta = smoothBeta;
 
-    // Increased sensitivity by 37.5% total for more reactive physics
+    // Increased sensitivity by 8% for more reactive physics
     const maxTilt = 50;
-    const gravityStrength = 0.6875;  // Increased from 0.625 (additional 10% stronger)
+    const gravityStrength = 0.675;  // Increased from 0.625 (8% stronger)
 
     engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
     engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
@@ -241,9 +241,9 @@ function createImageCardboard(startX) {
     const startY = -80;
     const dropStartY = -600;
 
-    // Calculate dimensions based on cardboard image
-    const cardboardWidth = 270;
-    const cardboardHeight = 101;
+    // Calculate dimensions based on cardboard image (scaled down 10%)
+    const cardboardWidth = 243;
+    const cardboardHeight = 91;
 
     // Create vertical rope from top
     const ropeLength = 280;
@@ -343,9 +343,9 @@ function createRopeWithText() {
     // Start position for drop animation (way above screen for fast drop)
     const dropStartY = -600;
 
-    // Calculate cardboard dimensions (scaled down 10% from 300x112)
-    const cardboardWidth = 270;
-    const cardboardHeight = 101;
+    // Calculate cardboard dimensions (scaled down to 243x91)
+    const cardboardWidth = 243;
+    const cardboardHeight = 91;
 
     // Pre-generate letter visual properties
     generateLetterVisuals();
@@ -562,8 +562,8 @@ function drawCustom() {
         ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
         ctx.rotate(cardboardBody.angle);
 
-        const cardboardWidth = 270;  // Scaled down 10% from 300
-        const cardboardHeight = 101;  // Scaled down 10% from 112
+        const cardboardWidth = 243;  // Scaled down to 243
+        const cardboardHeight = 91;  // Scaled down to 91
 
         // Pseudo-3D: Draw subtle shadow first (depth effect)
         ctx.save();
@@ -672,8 +672,8 @@ function drawCustom() {
         ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
         ctx.rotate(imageCardboardBody.angle);
 
-        const cardboardWidth = 270;
-        const cardboardHeight = 101;
+        const cardboardWidth = 243;
+        const cardboardHeight = 91;
 
         // Draw shadow
         ctx.save();
@@ -895,20 +895,20 @@ function drawTextLine(text, visualOffset, yOffset, lineIndex, fontSize) {
     }
 }
 
-// Enforce position limits - cardboard has gentle centering force
+// Enforce position limits - minimal constraint, allows free swinging offscreen
 function enforcePositionLimits() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Preferred Y position (52.5% down from top)
-    const preferredY = canvas.height * 0.525;
+    // Preferred Y position (52% down from top)
+    const preferredY = canvas.height * 0.52;
 
-    // Apply very gentle centering force (allows swinging out but prefers center)
-    if (activeBody.position.y > preferredY) {
-        const overshoot = activeBody.position.y - preferredY;
+    // Apply extremely weak centering force only when very far down (allows complete freedom to swing)
+    if (activeBody.position.y > preferredY + 100) {
+        const overshoot = activeBody.position.y - (preferredY + 100);
 
-        // Very weak restoring force - allows free swinging
-        const restoreForce = overshoot * 0.0003;  // Much weaker than before
+        // Extremely weak restoring force - barely noticeable, allows free swinging offscreen
+        const restoreForce = overshoot * 0.00005;  // Much weaker to allow offscreen swinging
         Body.applyForce(activeBody, activeBody.position, {
             x: 0,
             y: -restoreForce
