@@ -57,6 +57,7 @@ let hasTriggeredHorizontal = false;
 // Images for horizontal mode
 let cardboardImage = null;
 let phoneImage = null;
+let gripImage = null;  // 握东西.png
 let imagesLoaded = false;
 
 // Store letter visual properties for rendering
@@ -71,6 +72,12 @@ let imageCardboardBody = null;
 let imageRopeBodies = [];
 let imageConstraints = [];
 let isImageMode = false;  // Track if we're in image mode (rope never breaks)
+
+// Image reveal animation
+let imageRevealStartTime = null;
+let imageRevealDuration = 2000;  // 2 seconds
+let imageStartY = 0;  // Will be set based on screen midpoint
+let imageFinalY = 0;  // Will be calculated
 
 // Load images for horizontal mode
 function loadImages() {
@@ -93,10 +100,20 @@ function loadImages() {
     phoneImage.onerror = () => {
         console.error('Failed to load phone image');
     };
+
+    gripImage = new Image();
+    gripImage.src = '握东西.png';
+    gripImage.onload = () => {
+        console.log('Grip image loaded');
+        checkImagesLoaded();
+    };
+    gripImage.onerror = () => {
+        console.error('Failed to load grip image');
+    };
 }
 
 function checkImagesLoaded() {
-    if (cardboardImage.complete && phoneImage.complete) {
+    if (cardboardImage.complete && phoneImage.complete && gripImage.complete) {
         imagesLoaded = true;
         console.log('All images loaded successfully');
     }
@@ -147,6 +164,7 @@ function init() {
     Events.on(engine, 'afterUpdate', () => {
         checkOffscreen();
         enforcePositionLimits();
+        updateImageRevealAnimation();
     });
 
     // Request motion permission for iOS
@@ -217,13 +235,15 @@ function handleOrientation(event) {
 
 // Trigger horizontal mode - drop image-based cardboard
 function triggerHorizontalMode() {
-    console.log('Horizontal mode triggered! Dropping image cardboard...');
+    console.log('Horizontal mode triggered! Showing images from side...');
 
     // Verify images are actually loaded
-    if (!cardboardImage || !phoneImage || !cardboardImage.complete || !phoneImage.complete) {
+    if (!cardboardImage || !phoneImage || !gripImage ||
+        !cardboardImage.complete || !phoneImage.complete || !gripImage.complete) {
         console.error('Images not properly loaded. Cannot trigger horizontal mode.');
         console.log('Cardboard image:', cardboardImage ? 'exists' : 'missing');
         console.log('Phone image:', phoneImage ? 'exists' : 'missing');
+        console.log('Grip image:', gripImage ? 'exists' : 'missing');
         return;
     }
 
@@ -233,123 +253,81 @@ function triggerHorizontalMode() {
         cardboardBody = null;
     }
 
-    // Reset stability flag for new cardboard
+    // Reset flags
     isStableAtPosition = false;
     isOffscreen = false;
-    isImageMode = true;  // Enable image mode - rope will never break
+    isImageMode = true;  // Enable image mode - no rope, just images
 
     // Determine which side is higher based on gamma (tilt left/right)
     // Positive gamma = tilted right, so left side is higher
     // Negative gamma = tilted left, so right side is higher
     const dropFromLeft = lastGamma > 0;
 
-    console.log('Creating image cardboard from', dropFromLeft ? 'LEFT' : 'RIGHT', 'side');
-    console.log('Image mode enabled - rope will never break');
+    console.log('Creating image display from', dropFromLeft ? 'LEFT' : 'RIGHT', 'side');
+    console.log('Image mode enabled - no rope, 2-second reveal');
+
+    // Start reveal animation
+    imageRevealStartTime = Date.now();
     createImageCardboard(dropFromLeft);
 }
 
-// Create cardboard with images (drops from left or right edge, hangs at midpoint)
+// Create image display (no rope, just images slowly revealing from side)
 function createImageCardboard(dropFromLeft) {
     // Calculate dimensions (scaled up by 21% from 214x80)
     const cardboardWidth = 259;  // 214 * 1.21 = 258.94
     const cardboardHeight = 97;  // 80 * 1.21 = 96.8
 
-    // Rope hangs from side edge at screen MIDPOINT (middle height)
-    const sideMidpointY = canvas.height / 2;  // Middle of the screen height
-    const ropeX = dropFromLeft ? 50 : canvas.width - 50;  // 50px from left or right edge
+    // Position at side edge midpoint
+    const sideMidpointY = canvas.height / 2;  // Middle of screen height
+    const imageX = dropFromLeft ? 50 : canvas.width - 50;  // 50px from edge
 
-    // Create vertical rope from side midpoint
-    const ropeLength = 217;  // Match main rope length
-    const ropeSegments = 40;
-    const segmentHeight = ropeLength / ropeSegments;
+    // Start position (above midpoint, offscreen)
+    imageStartY = sideMidpointY - cardboardHeight;  // Start with image above midpoint
 
-    // Create rope segments vertically downward from midpoint
-    for (let i = 0; i < ropeSegments; i++) {
-        const x = ropeX;  // All segments at same X position (vertical rope)
-        const y = sideMidpointY + i * segmentHeight;  // Start from midpoint, go down
+    // Final position (at midpoint)
+    imageFinalY = sideMidpointY;
 
-        const segment = Bodies.circle(x, y, 1, {
-            density: 10,
-            friction: 0.1,
-            frictionAir: 0.01,
-            restitution: 0.3,
-            inertia: Infinity,
-            render: {
-                fillStyle: '#b8b8b8',
-                strokeStyle: '#a0a0a0',
-                lineWidth: 0.5
-            }
-        });
-
-        imageRopeBodies.push(segment);
-        Composite.add(engine.world, segment);
-
-        // Connect rope segments
-        if (i > 0) {
-            const constraint = Constraint.create({
-                bodyA: imageRopeBodies[i - 1],
-                bodyB: segment,
-                length: segmentHeight,
-                stiffness: 1,
-                damping: 0.5,
-                render: { visible: false }
-            });
-            constraint.breakingForce = Infinity;
-            imageConstraints.push(constraint);
-            Composite.add(engine.world, constraint);
-        }
-
-        // Pin the first segment to the side midpoint
-        if (i === 0) {
-            const pin = Constraint.create({
-                pointA: { x: ropeX, y: sideMidpointY },  // Fixed at side midpoint
-                bodyB: segment,
-                length: 0,
-                stiffness: 1,
-                render: { visible: false }
-            });
-            pin.breakingForce = Infinity;
-            imageConstraints.push(pin);
-            Composite.add(engine.world, pin);
-        }
-    }
-
-    // Create cardboard at the end of rope
-    const ropeEnd = imageRopeBodies[imageRopeBodies.length - 1];
-    const cardboardY = ropeEnd.position.y + 60;
-
+    // Create a static body (no physics, just for rendering position)
     imageCardboardBody = Bodies.rectangle(
-        ropeX,  // Same X as rope (directly below)
-        cardboardY,
+        imageX,
+        imageStartY,  // Start above screen
         cardboardWidth,
         cardboardHeight,
         {
-            density: 0.004,
-            friction: 0.3,
-            frictionAir: 0.015,
-            restitution: 0.25,
-            chamfer: { radius: 3 },
-            render: { fillStyle: 'transparent' }  // Transparent background
+            isStatic: true,  // No physics
+            render: { fillStyle: 'transparent' }
         }
     );
 
     Composite.add(engine.world, imageCardboardBody);
 
-    // Connect cardboard to rope end
-    const pendulumConstraint = Constraint.create({
-        bodyA: ropeEnd,
-        bodyB: imageCardboardBody,
-        pointB: { x: 0, y: -cardboardHeight / 2 + 10 },
-        length: 15,
-        stiffness: 1,
-        damping: 0.5,
-        render: { strokeStyle: '#a8a8a8', lineWidth: 1.5 }
-    });
-    pendulumConstraint.breakingForce = Infinity;
-    imageConstraints.push(pendulumConstraint);
-    Composite.add(engine.world, pendulumConstraint);
+    console.log('Image display created: x=' + imageX + ', starting reveal from y=' + imageStartY);
+}
 
-    console.log('Image cardboard created: rope at x=' + ropeX + ', midpoint y=' + sideMidpointY);
+// Update image reveal animation (2 seconds slow descent)
+function updateImageRevealAnimation() {
+    if (!imageRevealStartTime || !imageCardboardBody) return;
+
+    const elapsed = Date.now() - imageRevealStartTime;
+    const progress = Math.min(elapsed / imageRevealDuration, 1);  // 0 to 1
+
+    // Ease out cubic for smooth deceleration
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+    // Calculate current Y position
+    const currentY = imageStartY + (imageFinalY - imageStartY) * easedProgress;
+
+    // Update body position
+    Body.setPosition(imageCardboardBody, {
+        x: imageCardboardBody.position.x,
+        y: currentY
+    });
+
+    // Stop animation when complete
+    if (progress >= 1) {
+        imageRevealStartTime = null;
+        console.log('Image reveal animation complete');
+    }
 }
 
 // Create single rope with cardboard at the end
@@ -1004,14 +982,14 @@ function checkOffscreen() {
         }
     });
 
-    // Break rope when 1 or fewer corners are visible (3/4 or more is offscreen)
-    const mostlyOffscreen = visibleCorners <= 1;
+    // Break rope when 2 or fewer corners are visible (1/2 or more is offscreen)
+    const mostlyOffscreen = visibleCorners <= 2;
 
-    // Break rope when 3/4+ of cardboard is offscreen and has been stabilized
+    // Break rope when 1/2+ of cardboard is offscreen and has been stabilized
     if (mostlyOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! 3/4 of cardboard is offscreen - rope and cardboard disappearing.');
+        console.log('Rope broke! 1/2+ of cardboard is offscreen - rope and cardboard disappearing.');
     }
 
     // Remove everything when far offscreen
