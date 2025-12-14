@@ -4,7 +4,7 @@ const { Engine, Render, Runner, Bodies, Composite, Constraint, Body, Events } = 
 // Configuration
 const config = {
     line1: 'TURN',
-    line2: 'HORIZONTAL',
+    line2: 'HORIZONTALLY',
     letterSpacing: 6,
     lineSpacing: 20,
     ropeSegments: 40,
@@ -137,17 +137,17 @@ function handleOrientation(event) {
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
 
-    // Smooth transitions for natural movement
-    const smoothFactor = 0.1;
+    // Smooth transitions for natural movement (increased 25% for better response)
+    const smoothFactor = 0.125;  // Increased from 0.1 (25% more responsive)
     const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
     const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
     lastGamma = smoothGamma;
     lastBeta = smoothBeta;
 
-    // Medium sensitivity for visible swing
+    // Increased sensitivity by 25% for more reactive physics
     const maxTilt = 50;
-    const gravityStrength = 0.5;
+    const gravityStrength = 0.625;  // Increased from 0.5 (25% stronger)
 
     engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
     engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
@@ -161,8 +161,8 @@ function createRopeWithText() {
     // Start position for drop animation (way above screen for fast drop)
     const dropStartY = -600;
 
-    // Calculate cardboard dimensions (scaled down by 20%)
-    const cardboardWidth = 272;
+    // Calculate cardboard dimensions (adjusted for "HORIZONTALLY")
+    const cardboardWidth = 300;
     const cardboardHeight = 112;
 
     // Pre-generate letter visual properties
@@ -380,7 +380,7 @@ function drawCustom() {
         ctx.translate(cardboardBody.position.x, cardboardBody.position.y);
         ctx.rotate(cardboardBody.angle);
 
-        const cardboardWidth = 272;  // Scaled down by 20%
+        const cardboardWidth = 300;  // Adjusted for "HORIZONTALLY"
         const cardboardHeight = 112;  // Scaled down by 20%
 
         // Pseudo-3D: Draw subtle shadow first (depth effect)
@@ -632,7 +632,7 @@ function enforcePositionLimits() {
     if (!cardboardBody) return;
 
     // Maximum Y position (screen center-top area)
-    const maxY = canvas.height * 0.4;  // 40% down from top = upper-center
+    const maxY = canvas.height * 0.47;  // 47% down from top
 
     // If cardboard goes too low, apply smooth restoring force instead of hard reset
     if (cardboardBody.position.y > maxY) {
