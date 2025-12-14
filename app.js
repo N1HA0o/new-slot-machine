@@ -248,26 +248,26 @@ function triggerHorizontalMode() {
     createImageCardboard(dropFromLeft);
 }
 
-// Create cardboard with images (drops from left or right edge)
+// Create cardboard with images (drops from left or right edge, hangs at midpoint)
 function createImageCardboard(dropFromLeft) {
     // Calculate dimensions (scaled up by 21% from 214x80)
     const cardboardWidth = 259;  // 214 * 1.21 = 258.94
     const cardboardHeight = 97;  // 80 * 1.21 = 96.8
 
-    // Determine drop position from left or right edge
-    const screenTopY = canvas.height * 0.1;  // 10% from top
-    const startX = dropFromLeft ? -100 : canvas.width + 100;  // Start outside screen edge
-    const finalX = dropFromLeft ? 100 : canvas.width - 100;  // Final position near edge
+    // Rope hangs from side edge at screen MIDPOINT (middle height)
+    const sideMidpointY = canvas.height / 2;  // Middle of the screen height
+    const ropeX = dropFromLeft ? 50 : canvas.width - 50;  // 50px from left or right edge
 
-    // Create vertical rope from side edge
+    // Create vertical rope from side midpoint
     const ropeLength = 217;  // Match main rope length
     const ropeSegments = 40;
     const segmentHeight = ropeLength / ropeSegments;
 
-    // Create rope starting from side edge, dropping down
+    // Create rope segments vertically downward from midpoint
     for (let i = 0; i < ropeSegments; i++) {
-        const x = startX + (finalX - startX) * (i / ropeSegments);  // Interpolate from start to final position
-        const y = screenTopY + i * segmentHeight;
+        const x = ropeX;  // All segments at same X position (vertical rope)
+        const y = sideMidpointY + i * segmentHeight;  // Start from midpoint, go down
+
         const segment = Bodies.circle(x, y, 1, {
             density: 10,
             friction: 0.1,
@@ -284,11 +284,7 @@ function createImageCardboard(dropFromLeft) {
         imageRopeBodies.push(segment);
         Composite.add(engine.world, segment);
 
-        // Set initial velocity for drop animation
-        if (i > 0) {
-            Body.setVelocity(segment, { x: 0, y: 10 });
-        }
-
+        // Connect rope segments
         if (i > 0) {
             const constraint = Constraint.create({
                 bodyA: imageRopeBodies[i - 1],
@@ -303,9 +299,10 @@ function createImageCardboard(dropFromLeft) {
             Composite.add(engine.world, constraint);
         }
 
+        // Pin the first segment to the side midpoint
         if (i === 0) {
             const pin = Constraint.create({
-                pointA: { x: finalX, y: screenTopY },  // Pin to final X position at top
+                pointA: { x: ropeX, y: sideMidpointY },  // Fixed at side midpoint
                 bodyB: segment,
                 length: 0,
                 stiffness: 1,
@@ -317,11 +314,12 @@ function createImageCardboard(dropFromLeft) {
         }
     }
 
+    // Create cardboard at the end of rope
     const ropeEnd = imageRopeBodies[imageRopeBodies.length - 1];
-    const cardboardY = ropeEnd.y + 60;
+    const cardboardY = ropeEnd.position.y + 60;
 
     imageCardboardBody = Bodies.rectangle(
-        finalX,
+        ropeX,  // Same X as rope (directly below)
         cardboardY,
         cardboardWidth,
         cardboardHeight,
@@ -336,8 +334,8 @@ function createImageCardboard(dropFromLeft) {
     );
 
     Composite.add(engine.world, imageCardboardBody);
-    Body.setVelocity(imageCardboardBody, { x: 0, y: 10 });
 
+    // Connect cardboard to rope end
     const pendulumConstraint = Constraint.create({
         bodyA: ropeEnd,
         bodyB: imageCardboardBody,
@@ -350,6 +348,8 @@ function createImageCardboard(dropFromLeft) {
     pendulumConstraint.breakingForce = Infinity;
     imageConstraints.push(pendulumConstraint);
     Composite.add(engine.world, pendulumConstraint);
+
+    console.log('Image cardboard created: rope at x=' + ropeX + ', midpoint y=' + sideMidpointY);
 }
 
 // Create single rope with cardboard at the end
@@ -995,18 +995,23 @@ function checkOffscreen() {
         y: activeBody.position.y + corner.x * sin + corner.y * cos
     }));
 
-    // Check if ALL corners are outside the screen (ENTIRE cardboard is offscreen)
-    const allCornersOffscreen = worldCorners.every(corner => {
-        return corner.x < 0 || corner.x > canvas.width ||
-               corner.y < 0 || corner.y > canvas.height;
+    // Check if 3/4 or more of cardboard is offscreen (count visible corners)
+    let visibleCorners = 0;
+    worldCorners.forEach(corner => {
+        if (corner.x >= 0 && corner.x <= canvas.width &&
+            corner.y >= 0 && corner.y <= canvas.height) {
+            visibleCorners++;
+        }
     });
 
-    // Break rope ONLY when entire cardboard is completely offscreen and has been stabilized
-    // And ONLY for text cardboard (not image mode)
-    if (allCornersOffscreen && !isOffscreen && isStableAtPosition) {
+    // Break rope when 1 or fewer corners are visible (3/4 or more is offscreen)
+    const mostlyOffscreen = visibleCorners <= 1;
+
+    // Break rope when 3/4+ of cardboard is offscreen and has been stabilized
+    if (mostlyOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
-        console.log('Rope broke! Entire cardboard left the screen after stabilization.');
+        console.log('Rope broke! 3/4 of cardboard is offscreen - rope and cardboard disappearing.');
     }
 
     // Remove everything when far offscreen
