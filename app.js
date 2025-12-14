@@ -48,11 +48,13 @@ let isStableAtPosition = false;  // Track if cardboard has stabilized at 52% pos
 // Device orientation tracking
 let lastGamma = 0;
 let lastBeta = 0;
+let lastAlpha = 0;
 
-// Horizontal rotation detection
-let horizontalStartTime = null;
-let isHorizontal = false;
-let hasTriggeredHorizontal = false;
+// Phone flip detection for slot machine interaction
+let lastPitch = 0;
+let flipDetectionThreshold = 30;  // Degrees of pitch change to trigger flip
+let flipCooldown = 500;  // 500ms cooldown between flips
+let lastFlipTime = 0;
 
 // Images for horizontal mode
 let cardboardImage = null;
@@ -89,6 +91,23 @@ let ropeOpacity = 1.0;  // Current rope opacity
 let textCardboardExitTime = null;
 let imageTriggerDelay = 1000;  // 1 second delay after text cardboard exits
 let pendingImageTrigger = false;  // Track if we're waiting to trigger images
+
+// Slot machine columns (starts 1 second after image cardboard appears)
+let slotMachineActive = false;
+let slotMachineStartTime = null;
+let slotMachineDelay = 1000;  // 1 second after image appears
+let columns = [];  // Array of 4 columns
+const numColumns = 4;
+const squaresPerColumn = 15;  // Enough squares for seamless infinite scroll
+
+// Slot machine physics
+let columnBaseSpeed = [2, 2.5, 3, 2.2];  // Base scrolling speed for each column (pixels/frame)
+let columnCurrentSpeed = [2, 2.5, 3, 2.2];  // Current speed (changes during flip)
+let isFlipping = false;
+let flipStartTime = 0;
+let flipAccelDuration = 300;  // 0.3 seconds acceleration
+let flipPeakDuration = 500;  // 0.5 seconds at peak speed
+let flipDecelDuration = 1000;  // 1 second deceleration
 
 // Load images for horizontal mode
 function loadImages() {
@@ -178,6 +197,8 @@ function init() {
         updateImageRevealAnimation();
         updateRopeFade();
         checkDelayedImageTrigger();
+        checkSlotMachineStart();
+        updateSlotMachine();
     });
 
     // Request motion permission for iOS
@@ -214,41 +235,54 @@ function addMotionListeners() {
 
 // Handle device orientation with medium sensitivity
 function handleOrientation(event) {
-    if (isOffscreen) return;
-
     const gamma = event.gamma || 0;
     const beta = event.beta || 0;
+    const alpha = event.alpha || 0;
 
-    // Check for horizontal rotation (phone turned sideways > 75 degrees)
-    // Use gamma for landscape detection (more accurate)
-    const isPhoneHorizontal = Math.abs(gamma) > 75 || Math.abs(beta) > 75;
+    // Detect phone flip motion for slot machine (only when slot machine is active)
+    if (slotMachineActive) {
+        // Calculate pitch angle (forward/backward tilt)
+        const pitch = beta;
 
-    // Mark that horizontal rotation was detected (will trigger after delay in checkOffscreen)
-    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
-        hasTriggeredHorizontal = true;
-        imageDropFromLeft = lastGamma > 0;  // Store which side to drop from
-        console.log('Horizontal rotation >75° detected - will trigger after text cardboard exits');
+        // Detect rapid forward flip (positive pitch change)
+        const pitchChange = pitch - lastPitch;
+        const now = Date.now();
+
+        // Trigger flip if: rapid forward motion, not currently flipping, cooldown expired
+        if (pitchChange > flipDetectionThreshold && !isFlipping && (now - lastFlipTime) > flipCooldown) {
+            triggerSlotMachineFlip();
+            lastFlipTime = now;
+        }
+
+        lastPitch = pitch;
     }
 
-    // Smooth transitions for natural movement (increased 8% for better response)
-    const smoothFactor = 0.135;  // Increased from 0.125 (8% more responsive)
-    const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
-    const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
+    // Apply gravity physics to text cardboard (only when it exists)
+    if (cardboardBody && !isOffscreen) {
+        // Smooth transitions for natural movement (increased 8% for better response)
+        const smoothFactor = 0.135;  // Increased from 0.125 (8% more responsive)
+        const smoothGamma = lastGamma + (gamma - lastGamma) * smoothFactor;
+        const smoothBeta = lastBeta + (beta - lastBeta) * smoothFactor;
 
-    lastGamma = smoothGamma;
-    lastBeta = smoothBeta;
+        lastGamma = smoothGamma;
+        lastBeta = smoothBeta;
 
-    // Increased sensitivity by 8% for more reactive physics
-    const maxTilt = 50;
-    const gravityStrength = 0.675;  // Increased from 0.625 (8% stronger)
+        // Increased sensitivity by 8% for more reactive physics
+        const maxTilt = 50;
+        const gravityStrength = 0.675;  // Increased from 0.625 (8% stronger)
 
-    engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
-    engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
+        engine.gravity.x = (smoothGamma / maxTilt) * gravityStrength;
+        engine.gravity.y = Math.max(0.5, Math.abs(smoothBeta / maxTilt) * gravityStrength + 0.5);
+    }
+
+    lastGamma = gamma;
+    lastBeta = beta;
+    lastAlpha = alpha;
 }
 
-// Trigger horizontal mode - drop image-based cardboard
+// Trigger horizontal mode - drop image-based cardboard (auto-triggered after text exits)
 function triggerHorizontalMode() {
-    console.log('Horizontal mode triggered! Showing images from side...');
+    console.log('Horizontal mode triggered! Showing images from center...');
 
     // Verify images are actually loaded
     if (!cardboardImage || !phoneImage || !gripImage ||
@@ -260,7 +294,7 @@ function triggerHorizontalMode() {
         return;
     }
 
-    // Remove existing text-based cardboard
+    // Remove existing text-based cardboard (if any)
     if (cardboardBody) {
         Composite.remove(engine.world, cardboardBody);
         cardboardBody = null;
@@ -271,17 +305,18 @@ function triggerHorizontalMode() {
     isOffscreen = false;
     isImageMode = true;  // Enable image mode - no rope, just images
 
-    // Determine which side is higher based on gamma (tilt left/right)
-    // Positive gamma = tilted right, so left side is higher
-    // Negative gamma = tilted left, so right side is higher
-    const dropFromLeft = lastGamma > 0;
+    // Images appear at screen center (no side preference)
+    const dropFromLeft = Math.random() > 0.5;  // Random side for variety
 
-    console.log('Creating image display from', dropFromLeft ? 'LEFT' : 'RIGHT', 'side');
+    console.log('Creating image display at center');
     console.log('Image mode enabled - no rope, 2-second reveal');
 
     // Start reveal animation
     imageRevealStartTime = Date.now();
     createImageCardboard(dropFromLeft);
+
+    // Start slot machine 1 second after image appears
+    slotMachineStartTime = Date.now();
 }
 
 // Create image display (no rope, images slide horizontally from side to center)
@@ -757,6 +792,39 @@ function drawCustom() {
         ctx.restore();
     }
 
+    // Draw slot machine columns (if active)
+    if (slotMachineActive && columns.length > 0) {
+        ctx.save();
+
+        columns.forEach((column, colIdx) => {
+            // Draw each square in the column
+            column.squares.forEach(square => {
+                // Only draw if square is visible on screen
+                if (square.y + square.size > 0 && square.y < canvas.height) {
+                    ctx.fillStyle = square.color;
+                    ctx.fillRect(
+                        column.x + (column.width - square.size) / 2,  // Center in column
+                        square.y,
+                        square.size,
+                        square.size
+                    );
+
+                    // Add subtle border for depth
+                    ctx.strokeStyle = '#666666';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(
+                        column.x + (column.width - square.size) / 2,
+                        square.y,
+                        square.size,
+                        square.size
+                    );
+                }
+            });
+        });
+
+        ctx.restore();
+    }
+
     ctx.restore();
 }
 
@@ -1048,7 +1116,8 @@ function checkOffscreen() {
     // Track when cardboard completely exits screen (all 4 corners outside)
     const completelyOffscreen = visibleCorners === 0;
 
-    if (completelyOffscreen && !textCardboardExitTime && hasTriggeredHorizontal && !pendingImageTrigger) {
+    // Auto-trigger image mode when text cardboard completely exits (no rotation detection needed)
+    if (completelyOffscreen && !textCardboardExitTime && !pendingImageTrigger && imagesLoaded) {
         textCardboardExitTime = Date.now();
         pendingImageTrigger = true;
         console.log('Text cardboard completely exited screen - will trigger images in 1 second');
@@ -1116,6 +1185,136 @@ function checkDelayedImageTrigger() {
         console.log('1 second elapsed - triggering image mode now!');
         triggerHorizontalMode();
     }
+}
+
+// Check if it's time to start slot machine (1 second after image appears)
+function checkSlotMachineStart() {
+    if (slotMachineActive || !slotMachineStartTime) return;
+
+    const elapsed = Date.now() - slotMachineStartTime;
+
+    if (elapsed >= slotMachineDelay) {
+        slotMachineActive = true;
+        initializeSlotMachine();
+        console.log('Slot machine activated! 4 columns scrolling...');
+    }
+}
+
+// Initialize slot machine columns with gray squares
+function initializeSlotMachine() {
+    columns = [];
+    const columnWidth = canvas.width / numColumns;
+    const squareSize = 40;  // Size of each gray square
+    const squareGap = 10;   // Gap between squares
+
+    for (let col = 0; col < numColumns; col++) {
+        const column = {
+            x: col * columnWidth,
+            width: columnWidth,
+            squares: [],
+            baseSpeed: columnBaseSpeed[col],
+            currentSpeed: columnBaseSpeed[col],
+            peakSpeed: columnBaseSpeed[col] * 4,  // 4x base speed when flipped
+            acceleration: 0
+        };
+
+        // Create initial squares for this column
+        for (let i = 0; i < squaresPerColumn; i++) {
+            column.squares.push({
+                y: i * (squareSize + squareGap) - squareSize * 2,  // Start above viewport
+                size: squareSize,
+                color: '#888888'  // Gray color
+            });
+        }
+
+        columns.push(column);
+    }
+}
+
+// Update slot machine animation
+function updateSlotMachine() {
+    if (!slotMachineActive) return;
+
+    // Update flip physics if flipping
+    if (isFlipping) {
+        updateFlipPhysics();
+    }
+
+    // Update each column
+    columns.forEach((column, colIndex) => {
+        // Move squares down
+        column.squares.forEach(square => {
+            square.y += column.currentSpeed;
+        });
+
+        // Check if any square went off bottom, regenerate at top
+        column.squares.forEach((square, idx) => {
+            if (square.y > canvas.height + square.size) {
+                // Find the highest square in this column
+                let highestY = -Infinity;
+                column.squares.forEach(s => {
+                    if (s.y < highestY || highestY === -Infinity) {
+                        highestY = s.y;
+                    }
+                });
+
+                // Place this square above the highest square
+                square.y = highestY - (square.size + 10);
+            }
+        });
+    });
+}
+
+// Trigger slot machine flip (when phone flips forward)
+function triggerSlotMachineFlip() {
+    if (isFlipping) return;  // Already flipping
+
+    isFlipping = true;
+    flipStartTime = Date.now();
+
+    console.log('Slot machine flip triggered! Accelerating...');
+
+    // Add random variation to each column's response
+    columns.forEach((column, idx) => {
+        const variation = 0.8 + Math.random() * 0.4;  // 0.8 to 1.2 multiplier
+        column.peakSpeed = column.baseSpeed * 4 * variation;
+    });
+}
+
+// Update flip physics (acceleration, peak, deceleration)
+function updateFlipPhysics() {
+    const elapsed = Date.now() - flipStartTime;
+    const totalDuration = flipAccelDuration + flipPeakDuration + flipDecelDuration;
+
+    if (elapsed > totalDuration) {
+        // Flip complete, return to base speed
+        isFlipping = false;
+        columns.forEach((column, idx) => {
+            column.currentSpeed = column.baseSpeed;
+        });
+        console.log('Flip complete - returned to base speed');
+        return;
+    }
+
+    columns.forEach((column, idx) => {
+        if (elapsed < flipAccelDuration) {
+            // Acceleration phase (0 to 0.3s) - ease-out quad
+            const progress = elapsed / flipAccelDuration;
+            const eased = 1 - Math.pow(1 - progress, 2);
+            column.currentSpeed = column.baseSpeed + (column.peakSpeed - column.baseSpeed) * eased;
+
+        } else if (elapsed < flipAccelDuration + flipPeakDuration) {
+            // Peak phase (0.3s to 0.8s) - maintain peak speed
+            column.currentSpeed = column.peakSpeed;
+
+        } else {
+            // Deceleration phase (0.8s to 1.8s) - ease-out cubic
+            const decelStart = flipAccelDuration + flipPeakDuration;
+            const decelProgress = (elapsed - decelStart) / flipDecelDuration;
+            const eased = 1 - Math.pow(1 - decelProgress, 3);
+            column.currentSpeed = column.peakSpeed - (column.peakSpeed - column.baseSpeed) * eased;
+        }
+    });
 }
 
 // Remove all elements
