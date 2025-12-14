@@ -13,7 +13,7 @@ const config = {
     letterSize: 29,  // Scaled down another 10% from 32
     letterSizeLine2: 25,  // Smaller size for HORIZONTALLY, scaled down 10%
     startY: -80,  // Rope starts above screen (invisible anchor)
-    ropeLength: 228,  // Increased by 14% from 200 (200 * 1.14 = 228)
+    ropeLength: 217,  // Shortened by 5% from 228 (228 * 0.95 = 216.6)
     dropAnimationDuration: 1200  // Drop animation duration in ms
 };
 
@@ -70,6 +70,7 @@ let isDropping = true;
 let imageCardboardBody = null;
 let imageRopeBodies = [];
 let imageConstraints = [];
+let isImageMode = false;  // Track if we're in image mode (rope never breaks)
 
 // Load images for horizontal mode
 function loadImages() {
@@ -191,21 +192,11 @@ function handleOrientation(event) {
     // Use gamma for landscape detection (more accurate)
     const isPhoneHorizontal = Math.abs(gamma) > 75 || Math.abs(beta) > 75;
 
-    // ONLY trigger horizontal mode if rope has already broken (isOffscreen is true)
-    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded && isOffscreen) {
-        if (!horizontalStartTime) {
-            horizontalStartTime = Date.now();
-            console.log('Horizontal rotation detected - waiting 1.5 seconds...');
-        } else {
-            const elapsed = Date.now() - horizontalStartTime;
-            if (elapsed >= 1500) {  // 1.5 seconds
-                hasTriggeredHorizontal = true;
-                console.log('1.5 seconds elapsed - triggering horizontal mode!');
-                triggerHorizontalMode();
-            }
-        }
-    } else if (!isPhoneHorizontal) {
-        horizontalStartTime = null;
+    // Trigger horizontal mode IMMEDIATELY when rotated > 75 degrees (no waiting, no rope break required)
+    if (isPhoneHorizontal && !hasTriggeredHorizontal && imagesLoaded) {
+        hasTriggeredHorizontal = true;
+        console.log('Horizontal rotation >75° detected - triggering image cardboard immediately!');
+        triggerHorizontalMode();
     }
 
     // Smooth transitions for natural movement (increased 8% for better response)
@@ -245,12 +236,14 @@ function triggerHorizontalMode() {
     // Reset stability flag for new cardboard
     isStableAtPosition = false;
     isOffscreen = false;
+    isImageMode = true;  // Enable image mode - rope will never break
 
     // Determine which side to drop from (based on gamma direction)
     const dropFromLeft = lastGamma > 0;
     const sideX = dropFromLeft ? 100 : canvas.width - 100;
 
     console.log('Creating image cardboard at x:', sideX);
+    console.log('Image mode enabled - rope will never break');
     createImageCardboard(sideX);
 }
 
@@ -264,7 +257,7 @@ function createImageCardboard(startX) {
     const cardboardHeight = 91;
 
     // Create vertical rope from top
-    const ropeLength = 228;  // Match main rope length (increased by 14%)
+    const ropeLength = 217;  // Match main rope length (shortened by 5%)
     const ropeSegments = 40;
     const segmentHeight = ropeLength / ropeSegments;
 
@@ -918,8 +911,8 @@ function enforcePositionLimits() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Preferred Y position (55% down from top)
-    const preferredY = canvas.height * 0.55;
+    // Preferred Y position (57% down from top)
+    const preferredY = canvas.height * 0.57;
 
     // Check if cardboard has stabilized at preferred position
     if (!isStableAtPosition) {
@@ -929,7 +922,7 @@ function enforcePositionLimits() {
         // Consider stable if within 20px of preferred position and moving slowly
         if (distanceFromPreferred < 20 && velocity < 2) {
             isStableAtPosition = true;
-            console.log('Cardboard stabilized at 52% position - rope breaking now enabled');
+            console.log('Cardboard stabilized at 57% position - rope breaking now enabled');
         }
     }
 
@@ -951,9 +944,24 @@ function checkOffscreen() {
     const activeBody = cardboardBody || imageCardboardBody;
     if (!activeBody) return;
 
-    // Only check for rope breaking if cardboard has stabilized at 55% position
+    // Only check for rope breaking if cardboard has stabilized at 57% position
     if (!isStableAtPosition) {
         return; // Don't break rope during initial drop
+    }
+
+    // If in image mode, rope NEVER breaks - skip all breaking logic
+    if (isImageMode) {
+        // Still remove if extremely far offscreen
+        const veryFarOffscreen =
+            activeBody.position.y > canvas.height + 1000 ||
+            activeBody.position.y < -1000 ||
+            activeBody.position.x > canvas.width + 1000 ||
+            activeBody.position.x < -1000;
+
+        if (veryFarOffscreen) {
+            removeAllElements();
+        }
+        return; // Don't break rope in image mode
     }
 
     // Cardboard dimensions
@@ -988,6 +996,7 @@ function checkOffscreen() {
     });
 
     // Break rope ONLY when entire cardboard is completely offscreen and has been stabilized
+    // And ONLY for text cardboard (not image mode)
     if (allCornersOffscreen && !isOffscreen && isStableAtPosition) {
         isOffscreen = true;
         breakRope();
