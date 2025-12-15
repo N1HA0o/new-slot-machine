@@ -1123,6 +1123,11 @@ function breakRope() {
     // Start rope fade animation
     ropeBreakStartTime = Date.now();
 
+    // Start image trigger timer (1 second after rope breaks)
+    textCardboardExitTime = Date.now();
+    pendingImageTrigger = true;
+    console.log('Rope broken - will trigger image mode in 1 second');
+
     // Remove all constraints (so cardboard flies free with momentum)
     allConstraints.forEach(constraint => {
         Composite.remove(engine.world, constraint);
@@ -1184,13 +1189,15 @@ function checkSlotMachineStart() {
 // Initialize slot machine rows with gray squares (horizontal movement)
 function initializeSlotMachine() {
     columns = [];
-    const rowHeight = canvas.height / numColumns;  // Screen divided vertically into 4 rows
-    const squareSize = 112.5;  // Enlarged by 25% from 90 (90 * 1.25 = 112.5)
+    const totalHeight = canvas.height * 0.9;  // Use 9/10 of screen height
+    const rowHeight = totalHeight / numColumns;  // Divide into 4 rows
+    const verticalOffset = (canvas.height - totalHeight) / 2;  // Center vertically
+    const squareSize = 121.5;  // Enlarged by 8% from 112.5 (112.5 * 1.08 = 121.5)
     const squareGap = 25;   // Increased gap for larger squares
 
     for (let row = 0; row < numColumns; row++) {
         const column = {
-            y: row * rowHeight,  // Y position of this row
+            y: verticalOffset + row * rowHeight,  // Y position of this row (centered)
             height: rowHeight,   // Height of this row
             squares: [],
             baseSpeed: columnBaseSpeed[row],
