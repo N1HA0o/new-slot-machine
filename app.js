@@ -103,11 +103,11 @@ let slotMachineStartTime = null;
 let slotMachineDelay = 1000;  // 1 second after image appears
 let columns = [];  // Array of 4 columns
 const numColumns = 4;
-const squaresPerColumn = 15;  // Enough squares for seamless infinite scroll
+const squaresPerColumn = 6;  // Reduced from 15 to avoid too many squares on screen
 
 // Slot machine physics (horizontal movement)
-let columnBaseSpeed = [2, 2.5, 3, 2.2];  // Base scrolling speed for each row (pixels/frame)
-let columnCurrentSpeed = [2, 2.5, 3, 2.2];  // Current speed (changes during flip)
+let columnBaseSpeed = [1.4, 1.75, 2.1, 1.54];  // Reduced by 30% from [2, 2.5, 3, 2.2]
+let columnCurrentSpeed = [1.4, 1.75, 2.1, 1.54];  // Current speed (changes during flip)
 let isFlipping = false;
 let flipStartTime = 0;
 let flipAccelDuration = 300;  // 0.3 seconds acceleration
@@ -769,12 +769,7 @@ function drawCustom() {
         ctx.rotate(Math.PI / 2);
 
         // After rotation, dimensions swap visually
-        // Draw shadow (subtle) - now rotated
-        ctx.save();
-        ctx.translate(3, 3);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-        ctx.fillRect(-cardboardHeight / 2, -cardboardWidth / 2, cardboardHeight, cardboardWidth);
-        ctx.restore();
+        // Shadow removed (made transparent as requested)
 
         // Layer 1: Draw cardboard image (bottom layer, rotated)
         if (cardboardImage && cardboardImage.complete) {
@@ -800,30 +795,30 @@ function drawCustom() {
             );
         }
 
-        // Layer 3: Draw grip image (top layer, rotated LEFT 90°, 6% overlap)
-        // Grip needs additional -90° rotation (total 0° since already rotated +90°)
+        // Layer 3: Draw grip image (top layer, rotated 180°, 6% overlap)
+        // Grip needs additional 180° rotation to correct orientation
         // Grip bottom overlaps with cardboard top, both center-aligned
         if (gripImage && gripImage.complete) {
             ctx.save();
 
-            // Additional -90° rotation for grip image only (to correct orientation)
-            ctx.rotate(-Math.PI / 2);
+            // Additional 180° rotation for grip image only
+            ctx.rotate(Math.PI);
 
             // Get natural image dimensions or use cardboard size as reference
-            const gripW = cardboardWidth * 0.8;  // Note: swapped due to rotation
-            const gripH = cardboardHeight * 0.8;
+            const gripW = cardboardHeight * 0.8;  // Width after 180° rotation
+            const gripH = cardboardWidth * 0.8;   // Height after 180° rotation
 
             // Calculate 6% overlap: grip bottom overlaps with cardboard top
-            // After -90° rotation from current orientation
+            // After 180° rotation, positioning is reversed
             const overlapAmount = cardboardHeight * 0.06;
 
-            // Position grip so its bottom edge overlaps with cardboard top edge
-            const gripX = -cardboardWidth / 2 - gripW / 2 + overlapAmount;
+            // Position grip with 6% overlap (inverted due to 180° rotation)
+            const gripY = cardboardWidth / 2 + gripH / 2 - overlapAmount;
 
             ctx.drawImage(
                 gripImage,
-                gripX,       // Position with 6% overlap
-                -gripH / 2,  // Center vertically
+                -gripW / 2,  // Center horizontally
+                -gripY,      // Position with 6% overlap (inverted)
                 gripW,
                 gripH
             );
@@ -1202,8 +1197,8 @@ function checkSlotMachineStart() {
 function initializeSlotMachine() {
     columns = [];
     const rowHeight = canvas.height / numColumns;  // Screen divided vertically into 4 rows
-    const squareSize = 30;  // Adjusted size for horizontal movement
-    const squareGap = 10;   // Gap between squares
+    const squareSize = 90;  // Enlarged by 300% from 30 (30 * 3 = 90)
+    const squareGap = 20;   // Increased gap for larger squares
 
     for (let row = 0; row < numColumns; row++) {
         const column = {
