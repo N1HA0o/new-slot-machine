@@ -756,7 +756,7 @@ function drawCustom() {
         ctx.stroke();
     }
 
-    // Draw image-based cardboard (rotated 90° right with grip image)
+    // Draw image-based cardboard (all images rotated 90° right)
     if (imageCardboardBody && imagesLoaded) {
         ctx.save();
         ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
@@ -765,65 +765,58 @@ function drawCustom() {
         const cardboardWidth = 259;  // Scaled up by 21%
         const cardboardHeight = 97;  // Scaled up by 21%
 
-        // Rotate 90° clockwise (Math.PI / 2)
+        // Rotate 90° clockwise (Math.PI / 2) for all images
         ctx.rotate(Math.PI / 2);
 
         // After rotation, dimensions swap visually
-        // Shadow removed (made transparent as requested)
+        // Visual width = cardboardHeight (97)
+        // Visual height = cardboardWidth (259)
 
-        // Layer 1: Draw cardboard image (bottom layer, rotated)
+        // Layer 1: Draw cardboard image (bottom layer, rotated 90° right)
         if (cardboardImage && cardboardImage.complete) {
             ctx.drawImage(
                 cardboardImage,
-                -cardboardHeight / 2,
-                -cardboardWidth / 2,
-                cardboardHeight,
-                cardboardWidth
+                -cardboardHeight / 2,  // x: center horizontally
+                -cardboardWidth / 2,   // y: center vertically
+                cardboardHeight,       // width after rotation
+                cardboardWidth         // height after rotation
             );
         }
 
-        // Layer 2: Draw phone image on top (middle layer, rotated, scaled 70%)
+        // Layer 2: Draw phone image on top (middle layer, rotated 90° right, scaled 70%)
         if (phoneImage && phoneImage.complete) {
-            const phoneW = cardboardHeight * 0.7;
-            const phoneH = cardboardWidth * 0.7;
+            const phoneW = cardboardHeight * 0.7;  // 97 * 0.7 = 67.9
+            const phoneH = cardboardWidth * 0.7;   // 259 * 0.7 = 181.3
             ctx.drawImage(
                 phoneImage,
-                -phoneW / 2,
-                -phoneH / 2,
+                -phoneW / 2,  // Center horizontally
+                -phoneH / 2,  // Center vertically
                 phoneW,
                 phoneH
             );
         }
 
-        // Layer 3: Draw grip image (top layer, rotated 180°, 6% overlap)
-        // Grip needs additional 180° rotation to flip it upside down
-        // Grip bottom overlaps with cardboard top, both center-aligned
+        // Layer 3: Draw grip image (top layer, rotated 90° right, 6% overlap)
+        // Grip bottom overlaps with cardboard top
         if (gripImage && gripImage.complete) {
-            ctx.save();
+            const gripW = cardboardHeight * 0.8;  // 97 * 0.8 = 77.6
+            const gripH = cardboardWidth * 0.8;   // 259 * 0.8 = 207.2
 
-            // Additional 180° rotation for grip image only (flips upside down)
-            ctx.rotate(Math.PI);
+            // Calculate 6% overlap (based on cardboard visual height)
+            const overlapAmount = cardboardHeight * 0.06;  // 97 * 0.06 = 5.82
 
-            // 180° rotation doesn't swap width/height, just flips orientation
-            // After base 90° rotation, dimensions are: height becomes visual width, width becomes visual height
-            const gripW = cardboardHeight * 0.8;  // Visual width (after 90° rotation)
-            const gripH = cardboardWidth * 0.8;   // Visual height (after 90° rotation)
-
-            // Calculate 6% overlap
-            const overlapAmount = cardboardHeight * 0.06;
-
-            // After 180° flip, top becomes bottom, so positioning is inverted
-            const gripY = cardboardWidth / 2 + gripH / 2 - overlapAmount;
+            // Cardboard top is at y = -cardboardWidth / 2
+            // Grip bottom should overlap with cardboard top by 6%
+            // Grip center should be at: cardboard_top - grip_half_height + overlap
+            const gripCenterY = -cardboardWidth / 2 - gripH / 2 + overlapAmount;
 
             ctx.drawImage(
                 gripImage,
-                -gripW / 2,  // Center horizontally
-                -gripY,      // Position with 6% overlap (top/bottom flipped)
+                -gripW / 2,      // Center horizontally
+                gripCenterY,     // Position with 6% overlap at top
                 gripW,
                 gripH
             );
-
-            ctx.restore();
         }
 
         ctx.restore();
