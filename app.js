@@ -796,29 +796,29 @@ function drawCustom() {
         }
 
         // Layer 3: Draw grip image (top layer, rotated 180°, 6% overlap)
-        // Grip needs additional 180° rotation to correct orientation
+        // Grip needs additional 180° rotation to flip it upside down
         // Grip bottom overlaps with cardboard top, both center-aligned
         if (gripImage && gripImage.complete) {
             ctx.save();
 
-            // Additional 180° rotation for grip image only
+            // Additional 180° rotation for grip image only (flips upside down)
             ctx.rotate(Math.PI);
 
-            // Get natural image dimensions or use cardboard size as reference
-            const gripW = cardboardHeight * 0.8;  // Width after 180° rotation
-            const gripH = cardboardWidth * 0.8;   // Height after 180° rotation
+            // 180° rotation doesn't swap width/height, just flips orientation
+            // After base 90° rotation, dimensions are: height becomes visual width, width becomes visual height
+            const gripW = cardboardHeight * 0.8;  // Visual width (after 90° rotation)
+            const gripH = cardboardWidth * 0.8;   // Visual height (after 90° rotation)
 
-            // Calculate 6% overlap: grip bottom overlaps with cardboard top
-            // After 180° rotation, positioning is reversed
+            // Calculate 6% overlap
             const overlapAmount = cardboardHeight * 0.06;
 
-            // Position grip with 6% overlap (inverted due to 180° rotation)
+            // After 180° flip, top becomes bottom, so positioning is inverted
             const gripY = cardboardWidth / 2 + gripH / 2 - overlapAmount;
 
             ctx.drawImage(
                 gripImage,
                 -gripW / 2,  // Center horizontally
-                -gripY,      // Position with 6% overlap (inverted)
+                -gripY,      // Position with 6% overlap (top/bottom flipped)
                 gripW,
                 gripH
             );
@@ -1197,8 +1197,8 @@ function checkSlotMachineStart() {
 function initializeSlotMachine() {
     columns = [];
     const rowHeight = canvas.height / numColumns;  // Screen divided vertically into 4 rows
-    const squareSize = 90;  // Enlarged by 300% from 30 (30 * 3 = 90)
-    const squareGap = 20;   // Increased gap for larger squares
+    const squareSize = 112.5;  // Enlarged by 25% from 90 (90 * 1.25 = 112.5)
+    const squareGap = 25;   // Increased gap for larger squares
 
     for (let row = 0; row < numColumns; row++) {
         const column = {
@@ -1207,14 +1207,15 @@ function initializeSlotMachine() {
             squares: [],
             baseSpeed: columnBaseSpeed[row],
             currentSpeed: columnBaseSpeed[row],
-            peakSpeed: columnBaseSpeed[row] * 4,  // 4x base speed when flipped
+            peakSpeed: columnBaseSpeed[row] * 8,  // 8x base speed when flipped (more obvious effect)
             acceleration: 0
         };
 
         // Create initial squares for this row (moving horizontally from left to right)
+        // Start far left of viewport so generation is not visible
         for (let i = 0; i < squaresPerColumn; i++) {
             column.squares.push({
-                x: i * (squareSize + squareGap) - squareSize * 2,  // Start left of viewport
+                x: i * (squareSize + squareGap) - canvas.width,  // Start one full screen width to the left
                 size: squareSize,
                 color: '#888888'  // Gray color
             });
@@ -1270,7 +1271,7 @@ function triggerSlotMachineFlip() {
     // Add random variation to each column's response
     columns.forEach((column, idx) => {
         const variation = 0.8 + Math.random() * 0.4;  // 0.8 to 1.2 multiplier
-        column.peakSpeed = column.baseSpeed * 4 * variation;
+        column.peakSpeed = column.baseSpeed * 8 * variation;  // 8x for more obvious effect
     });
 }
 
