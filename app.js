@@ -756,7 +756,7 @@ function drawCustom() {
         ctx.stroke();
     }
 
-    // Draw image-based cardboard (all images rotated 90° right)
+    // Draw image-based cardboard (no rotation, display images as-is)
     if (imageCardboardBody && imagesLoaded) {
         ctx.save();
         ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
@@ -765,28 +765,23 @@ function drawCustom() {
         const cardboardWidth = 259;  // Scaled up by 21%
         const cardboardHeight = 97;  // Scaled up by 21%
 
-        // Rotate 90° clockwise (Math.PI / 2) for all images
-        ctx.rotate(Math.PI / 2);
+        // No rotation - display images in their original orientation
 
-        // After rotation, dimensions swap visually
-        // Visual width = cardboardHeight (97)
-        // Visual height = cardboardWidth (259)
-
-        // Layer 1: Draw cardboard image (bottom layer, rotated 90° right)
+        // Layer 1: Draw cardboard image (bottom layer)
         if (cardboardImage && cardboardImage.complete) {
             ctx.drawImage(
                 cardboardImage,
-                -cardboardHeight / 2,  // x: center horizontally
-                -cardboardWidth / 2,   // y: center vertically
-                cardboardHeight,       // width after rotation
-                cardboardWidth         // height after rotation
+                -cardboardWidth / 2,   // x: center horizontally
+                -cardboardHeight / 2,  // y: center vertically
+                cardboardWidth,        // original width
+                cardboardHeight        // original height
             );
         }
 
-        // Layer 2: Draw phone image on top (middle layer, rotated 90° right, scaled 70%)
+        // Layer 2: Draw phone image on top (middle layer, scaled 70%)
         if (phoneImage && phoneImage.complete) {
-            const phoneW = cardboardHeight * 0.7;  // 97 * 0.7 = 67.9
-            const phoneH = cardboardWidth * 0.7;   // 259 * 0.7 = 181.3
+            const phoneW = cardboardWidth * 0.7;   // 259 * 0.7 = 181.3
+            const phoneH = cardboardHeight * 0.7;  // 97 * 0.7 = 67.9
             ctx.drawImage(
                 phoneImage,
                 -phoneW / 2,  // Center horizontally
@@ -796,19 +791,19 @@ function drawCustom() {
             );
         }
 
-        // Layer 3: Draw grip image (top layer, rotated 90° right, 6% overlap)
+        // Layer 3: Draw grip image (top layer, 6% overlap)
         // Grip bottom overlaps with cardboard top
         if (gripImage && gripImage.complete) {
-            const gripW = cardboardHeight * 0.8;  // 97 * 0.8 = 77.6
-            const gripH = cardboardWidth * 0.8;   // 259 * 0.8 = 207.2
+            const gripW = cardboardWidth * 0.8;   // 259 * 0.8 = 207.2
+            const gripH = cardboardHeight * 0.8;  // 97 * 0.8 = 77.6
 
-            // Calculate 6% overlap (based on cardboard visual height)
+            // Calculate 6% overlap (based on cardboard height)
             const overlapAmount = cardboardHeight * 0.06;  // 97 * 0.06 = 5.82
 
-            // Cardboard top is at y = -cardboardWidth / 2
+            // Cardboard top is at y = -cardboardHeight / 2
             // Grip bottom should overlap with cardboard top by 6%
             // Grip center should be at: cardboard_top - grip_half_height + overlap
-            const gripCenterY = -cardboardWidth / 2 - gripH / 2 + overlapAmount;
+            const gripCenterY = -cardboardHeight / 2 - gripH / 2 + overlapAmount;
 
             ctx.drawImage(
                 gripImage,
