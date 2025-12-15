@@ -56,10 +56,10 @@ let flipDetectionThreshold = 30;  // Degrees of pitch change to trigger flip
 let flipCooldown = 500;  // 500ms cooldown between flips
 let lastFlipTime = 0;
 
-// Rope breaking rotation detection
-let rotationExceeds45 = false;  // Track if rotation exceeds 45°
-let rotation45StartTime = null;  // When rotation first exceeded 45°
-let rotation45Duration = 500;  // 0.5 seconds (500ms) required to break rope
+// Rope breaking rotation detection (left/right only)
+let rotationExceeds46 = false;  // Track if rotation exceeds 46°
+let rotation46StartTime = null;  // When rotation first exceeded 46°
+let rotation46Duration = 500;  // 0.5 seconds (500ms) required to break rope
 
 // Images for horizontal mode
 let cardboardImage = null;
@@ -105,8 +105,8 @@ let columns = [];  // Array of 4 columns
 const numColumns = 4;
 const squaresPerColumn = 15;  // Enough squares for seamless infinite scroll
 
-// Slot machine physics
-let columnBaseSpeed = [2, 2.5, 3, 2.2];  // Base scrolling speed for each column (pixels/frame)
+// Slot machine physics (horizontal movement)
+let columnBaseSpeed = [2, 2.5, 3, 2.2];  // Base scrolling speed for each row (pixels/frame)
 let columnCurrentSpeed = [2, 2.5, 3, 2.2];  // Current speed (changes during flip)
 let isFlipping = false;
 let flipStartTime = 0;
@@ -244,31 +244,32 @@ function handleOrientation(event) {
     const beta = event.beta || 0;
     const alpha = event.alpha || 0;
 
-    // Detect rotation exceeding 45° for rope breaking (only when cardboard exists and rope not broken)
+    // Detect left/right rotation exceeding 46° for rope breaking (only when cardboard exists and rope not broken)
     if (cardboardBody && !isOffscreen) {
-        const totalRotation = Math.abs(gamma) + Math.abs(beta);
-        const exceeds45 = totalRotation > 45;
+        // Only check gamma (left/right tilt), not beta (pitch)
+        const leftRightRotation = Math.abs(gamma);
+        const exceeds46 = leftRightRotation > 46;
 
-        if (exceeds45) {
-            // Start timer if just exceeded 45°
-            if (!rotation45StartTime) {
-                rotation45StartTime = Date.now();
-                console.log('Rotation exceeded 45° - starting 0.5s timer for rope break');
+        if (exceeds46) {
+            // Start timer if just exceeded 46°
+            if (!rotation46StartTime) {
+                rotation46StartTime = Date.now();
+                console.log('Left/right rotation exceeded 46° - starting 0.5s timer for rope break');
             }
 
             // Check if 0.5 seconds have passed
-            const elapsed = Date.now() - rotation45StartTime;
-            if (elapsed >= rotation45Duration && !isOffscreen) {
+            const elapsed = Date.now() - rotation46StartTime;
+            if (elapsed >= rotation46Duration && !isOffscreen) {
                 // Trigger rope break
                 isOffscreen = true;
                 breakRope();
-                console.log('Rotation held >45° for 0.5s - rope breaking!');
+                console.log('Left/right rotation held >46° for 0.5s - rope breaking!');
             }
         } else {
-            // Reset timer if rotation falls below 45°
-            if (rotation45StartTime) {
-                rotation45StartTime = null;
-                console.log('Rotation dropped below 45° - timer reset');
+            // Reset timer if rotation falls below 46°
+            if (rotation46StartTime) {
+                rotation46StartTime = null;
+                console.log('Left/right rotation dropped below 46° - timer reset');
             }
         }
     }
@@ -799,46 +800,53 @@ function drawCustom() {
             );
         }
 
-        // Layer 3: Draw grip image (top layer, rotated, 6% overlap)
+        // Layer 3: Draw grip image (top layer, rotated LEFT 90°, 6% overlap)
+        // Grip needs additional -90° rotation (total 0° since already rotated +90°)
         // Grip bottom overlaps with cardboard top, both center-aligned
         if (gripImage && gripImage.complete) {
+            ctx.save();
+
+            // Additional -90° rotation for grip image only (to correct orientation)
+            ctx.rotate(-Math.PI / 2);
+
             // Get natural image dimensions or use cardboard size as reference
-            const gripW = cardboardHeight * 0.8;  // Reasonable size for grip
-            const gripH = cardboardWidth * 0.8;
+            const gripW = cardboardWidth * 0.8;  // Note: swapped due to rotation
+            const gripH = cardboardHeight * 0.8;
 
             // Calculate 6% overlap: grip bottom overlaps with cardboard top
-            // cardboardTop is at -cardboardWidth/2
-            // grip should be positioned so its bottom (gripH/2) overlaps by 6%
+            // After -90° rotation from current orientation
             const overlapAmount = cardboardHeight * 0.06;
 
             // Position grip so its bottom edge overlaps with cardboard top edge
-            const gripY = -cardboardWidth / 2 - gripH / 2 + overlapAmount;
+            const gripX = -cardboardWidth / 2 - gripW / 2 + overlapAmount;
 
             ctx.drawImage(
                 gripImage,
-                -gripW / 2,  // Center horizontally
-                gripY,       // Position with 6% overlap
+                gripX,       // Position with 6% overlap
+                -gripH / 2,  // Center vertically
                 gripW,
                 gripH
             );
+
+            ctx.restore();
         }
 
         ctx.restore();
     }
 
-    // Draw slot machine columns (if active)
+    // Draw slot machine rows (if active) - horizontal movement
     if (slotMachineActive && columns.length > 0) {
         ctx.save();
 
-        columns.forEach((column, colIdx) => {
-            // Draw each square in the column
+        columns.forEach((column, rowIdx) => {
+            // Draw each square in the row
             column.squares.forEach(square => {
                 // Only draw if square is visible on screen
-                if (square.y + square.size > 0 && square.y < canvas.height) {
+                if (square.x + square.size > 0 && square.x < canvas.width) {
                     ctx.fillStyle = square.color;
                     ctx.fillRect(
-                        column.x + (column.width - square.size) / 2,  // Center in column
-                        square.y,
+                        square.x,
+                        column.y + (column.height - square.size) / 2,  // Center in row
                         square.size,
                         square.size
                     );
@@ -847,8 +855,8 @@ function drawCustom() {
                     ctx.strokeStyle = '#666666';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(
-                        column.x + (column.width - square.size) / 2,
-                        square.y,
+                        square.x,
+                        column.y + (column.height - square.size) / 2,
                         square.size,
                         square.size
                     );
@@ -1190,28 +1198,28 @@ function checkSlotMachineStart() {
     }
 }
 
-// Initialize slot machine columns with gray squares
+// Initialize slot machine rows with gray squares (horizontal movement)
 function initializeSlotMachine() {
     columns = [];
-    const columnWidth = canvas.width / numColumns;
-    const squareSize = 40;  // Size of each gray square
+    const rowHeight = canvas.height / numColumns;  // Screen divided vertically into 4 rows
+    const squareSize = 30;  // Adjusted size for horizontal movement
     const squareGap = 10;   // Gap between squares
 
-    for (let col = 0; col < numColumns; col++) {
+    for (let row = 0; row < numColumns; row++) {
         const column = {
-            x: col * columnWidth,
-            width: columnWidth,
+            y: row * rowHeight,  // Y position of this row
+            height: rowHeight,   // Height of this row
             squares: [],
-            baseSpeed: columnBaseSpeed[col],
-            currentSpeed: columnBaseSpeed[col],
-            peakSpeed: columnBaseSpeed[col] * 4,  // 4x base speed when flipped
+            baseSpeed: columnBaseSpeed[row],
+            currentSpeed: columnBaseSpeed[row],
+            peakSpeed: columnBaseSpeed[row] * 4,  // 4x base speed when flipped
             acceleration: 0
         };
 
-        // Create initial squares for this column
+        // Create initial squares for this row (moving horizontally from left to right)
         for (let i = 0; i < squaresPerColumn; i++) {
             column.squares.push({
-                y: i * (squareSize + squareGap) - squareSize * 2,  // Start above viewport
+                x: i * (squareSize + squareGap) - squareSize * 2,  // Start left of viewport
                 size: squareSize,
                 color: '#888888'  // Gray color
             });
@@ -1221,7 +1229,7 @@ function initializeSlotMachine() {
     }
 }
 
-// Update slot machine animation
+// Update slot machine animation (horizontal movement)
 function updateSlotMachine() {
     if (!slotMachineActive) return;
 
@@ -1230,26 +1238,26 @@ function updateSlotMachine() {
         updateFlipPhysics();
     }
 
-    // Update each column
-    columns.forEach((column, colIndex) => {
-        // Move squares down
+    // Update each row
+    columns.forEach((column, rowIndex) => {
+        // Move squares to the right
         column.squares.forEach(square => {
-            square.y += column.currentSpeed;
+            square.x += column.currentSpeed;
         });
 
-        // Check if any square went off bottom, regenerate at top
+        // Check if any square went off right edge, regenerate at left
         column.squares.forEach((square, idx) => {
-            if (square.y > canvas.height + square.size) {
-                // Find the highest square in this column
-                let highestY = -Infinity;
+            if (square.x > canvas.width + square.size) {
+                // Find the leftmost square in this row
+                let leftmostX = Infinity;
                 column.squares.forEach(s => {
-                    if (s.y < highestY || highestY === -Infinity) {
-                        highestY = s.y;
+                    if (s.x < leftmostX) {
+                        leftmostX = s.x;
                     }
                 });
 
-                // Place this square above the highest square
-                square.y = highestY - (square.size + 10);
+                // Place this square to the left of the leftmost square
+                square.x = leftmostX - (square.size + 10);
             }
         });
     });
