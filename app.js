@@ -931,9 +931,9 @@ function drawCustom() {
                     ctx.strokeRect(square.x, squareY, square.size, square.size);
 
                     // Draw part image if this square has one
-                    if (square.hasPart && column.partImage && column.partImage.complete) {
+                    if (square.hasPart && square.partImage && square.partImage.complete) {
                         ctx.drawImage(
-                            column.partImage,
+                            square.partImage,
                             square.x,
                             squareY,
                             square.size,
@@ -1492,9 +1492,7 @@ function initializeSlotMachine() {
     const squareSize = 121.5;  // Enlarged by 8% from 112.5 (112.5 * 1.08 = 121.5)
     const squareGap = 25;   // Increased gap for larger squares
 
-    // Randomly select group: fish or lego
-    currentGroup = Math.random() < 0.5 ? 'fish' : 'lego';
-    console.log(`Slot machine initialized with group: ${currentGroup}`);
+    console.log('Slot machine initialized with BOTH fish and lego groups');
 
     // Image assignments per row (from bottom to top):
     // For fish group:
@@ -1509,22 +1507,19 @@ function initializeSlotMachine() {
     // hulie3 (row 2) -> 乐高身体 (legoBody)
     // hulie4 (row 3, top) -> 乐高下半身 (legoLegs)
 
-    let imageMap;
-    if (currentGroup === 'fish') {
-        imageMap = [
-            { type: 'fishTail', image: fishTailImage, group: 'fish' },
-            { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
-            { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
-            { type: 'fishHead', image: fishHeadImage, group: 'fish' }
-        ];
-    } else {
-        imageMap = [
-            { type: 'legoHair', image: legoHairImage, group: 'lego' },
-            { type: 'legoHead', image: legoHeadImage, group: 'lego' },
-            { type: 'legoBody', image: legoBodyImage, group: 'lego' },
-            { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
-        ];
-    }
+    const fishImageMap = [
+        { type: 'fishTail', image: fishTailImage, group: 'fish' },
+        { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
+        { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+        { type: 'fishHead', image: fishHeadImage, group: 'fish' }
+    ];
+
+    const legoImageMap = [
+        { type: 'legoHair', image: legoHairImage, group: 'lego' },
+        { type: 'legoHead', image: legoHeadImage, group: 'lego' },
+        { type: 'legoBody', image: legoBodyImage, group: 'lego' },
+        { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
+    ];
 
     for (let row = 0; row < numColumns; row++) {
         const column = {
@@ -1535,24 +1530,41 @@ function initializeSlotMachine() {
             currentSpeed: columnBaseSpeed[row],
             peakSpeed: columnBaseSpeed[row] * 8,  // 8x base speed when flipped (more obvious effect)
             acceleration: 0,
-            partType: imageMap[row].type,
-            partImage: imageMap[row].image,
-            partGroup: imageMap[row].group
+            rowIndex: row
         };
 
         // Create initial squares for this row (moving horizontally from left to right)
         // Start far left of viewport so generation is not visible
-        // Randomly insert part images (every 2-4 squares)
+        // Randomly insert part images from BOTH groups
         for (let i = 0; i < squaresPerColumn; i++) {
-            // Randomly decide if this square has a part (33% chance, ensuring multiple parts appear)
+            // Randomly decide if this square has a part and which group (33% chance for part)
             const hasPart = Math.random() < 0.33;
+            let partGroup = null;
+            let partType = null;
+            let partImage = null;
+
+            if (hasPart) {
+                // Randomly select fish or lego group (50/50)
+                const isFish = Math.random() < 0.5;
+                if (isFish) {
+                    partGroup = 'fish';
+                    partType = fishImageMap[row].type;
+                    partImage = fishImageMap[row].image;
+                } else {
+                    partGroup = 'lego';
+                    partType = legoImageMap[row].type;
+                    partImage = legoImageMap[row].image;
+                }
+            }
+
             column.squares.push({
                 x: i * (squareSize + squareGap) - canvas.width,  // Start one full screen width to the left
                 size: squareSize,
                 color: '#888888',  // Gray color
                 hasPart: hasPart,
-                partType: hasPart ? imageMap[row].type : null,
-                partGroup: hasPart ? imageMap[row].group : null
+                partType: partType,
+                partGroup: partGroup,
+                partImage: partImage  // Store image reference directly in square
             });
         }
 
@@ -1597,12 +1609,41 @@ function updateSlotMachine() {
                     // Place this square to the left of the leftmost square
                     square.x = leftmostX - (square.size + 25);
 
-                    // Randomly regenerate parts (maintain probability)
+                    // Randomly regenerate parts from BOTH groups
                     // Increase probability if partial matches exist
                     const partProbability = matchCount >= 2 ? 0.5 : 0.33;
                     square.hasPart = Math.random() < partProbability;
-                    square.partType = square.hasPart ? column.partType : null;
-                    square.partGroup = square.hasPart ? column.partGroup : null;
+
+                    if (square.hasPart) {
+                        // Randomly select fish or lego group (50/50)
+                        const isFish = Math.random() < 0.5;
+                        const fishImageMap = [
+                            { type: 'fishTail', image: fishTailImage, group: 'fish' },
+                            { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
+                            { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+                            { type: 'fishHead', image: fishHeadImage, group: 'fish' }
+                        ];
+                        const legoImageMap = [
+                            { type: 'legoHair', image: legoHairImage, group: 'lego' },
+                            { type: 'legoHead', image: legoHeadImage, group: 'lego' },
+                            { type: 'legoBody', image: legoBodyImage, group: 'lego' },
+                            { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
+                        ];
+
+                        if (isFish) {
+                            square.partGroup = 'fish';
+                            square.partType = fishImageMap[rowIndex].type;
+                            square.partImage = fishImageMap[rowIndex].image;
+                        } else {
+                            square.partGroup = 'lego';
+                            square.partType = legoImageMap[rowIndex].type;
+                            square.partImage = legoImageMap[rowIndex].image;
+                        }
+                    } else {
+                        square.partType = null;
+                        square.partGroup = null;
+                        square.partImage = null;
+                    }
                 }
             });
         }
@@ -1758,8 +1799,22 @@ function checkMatchingInWindow() {
         }
     });
 
-    // Check for matches (any 2 columns with same group)
-    const matchingSymbols = symbolsAtCenter.filter(s => s.partGroup === currentGroup);
+    // Check for matches - look for fish group or lego group
+    const fishSymbols = symbolsAtCenter.filter(s => s.partGroup === 'fish');
+    const legoSymbols = symbolsAtCenter.filter(s => s.partGroup === 'lego');
+
+    // Determine which group has more matches
+    let matchingSymbols = [];
+    let matchedGroup = null;
+
+    if (fishSymbols.length >= 2 && fishSymbols.length >= legoSymbols.length) {
+        matchingSymbols = fishSymbols;
+        matchedGroup = 'fish';
+    } else if (legoSymbols.length >= 2) {
+        matchingSymbols = legoSymbols;
+        matchedGroup = 'lego';
+    }
+
     const unlockedMatchingSymbols = matchingSymbols.filter(s => !s.locked);
 
     // If we found at least 2 symbols (same group), trigger match
@@ -1769,12 +1824,15 @@ function checkMatchingInWindow() {
 
         // Only trigger if this is actually a new/better match
         if (newMatchCount > matchCount) {
-            console.log(`Match detected! ${newMatchCount} ${currentGroup} symbols aligned!`);
+            console.log(`Match detected! ${newMatchCount} ${matchedGroup} symbols aligned!`);
+
+            // Update current group to matched group
+            currentGroup = matchedGroup;
 
             // Lock the newly matched columns at center
             matchingSymbols.forEach(symbol => {
                 if (!symbol.locked) {
-                    lockColumnAtCenter(symbol.columnIndex);
+                    lockColumnAtCenter(symbol.columnIndex, symbol.partGroup);
                 }
             });
 
@@ -1796,16 +1854,16 @@ function checkMatchingInWindow() {
 }
 
 // Lock a column at the center line
-function lockColumnAtCenter(columnIndex) {
+function lockColumnAtCenter(columnIndex, partGroup) {
     const column = columns[columnIndex];
     const centerX = canvas.width / 2;
 
-    // Find the part square closest to center
+    // Find the part square closest to center that matches the group
     let targetSquare = null;
     let minDistance = Infinity;
 
     column.squares.forEach(square => {
-        if (square.hasPart) {
+        if (square.hasPart && square.partGroup === partGroup) {
             const squareCenter = square.x + square.size / 2;
             const distance = Math.abs(squareCenter - centerX);
             if (distance < minDistance) {
@@ -1824,13 +1882,15 @@ function lockColumnAtCenter(columnIndex) {
         column.squares.forEach(square => {
             square.x += offset;
         });
+
+        console.log(`Column ${columnIndex} locked at center with ${targetSquare.partType} (${partGroup})`);
+    } else {
+        console.warn(`No ${partGroup} part found in column ${columnIndex} to lock`);
     }
 
     // Lock this column
     lockedColumns[columnIndex] = true;
     column.currentSpeed = 0;
-
-    console.log(`Column ${columnIndex} locked at center with ${column.partType}`);
 }
 
 // Play partial match animation (2-3 columns matched)
@@ -1853,6 +1913,11 @@ function playFullMatchAnimation() {
 function combineFishParts() {
     console.log(`Combining ${currentGroup} parts...`);
 
+    if (!currentGroup) {
+        console.error('No current group set! Cannot combine parts.');
+        return;
+    }
+
     // Hide down arrow
     showDownArrow = false;
 
@@ -1860,31 +1925,36 @@ function combineFishParts() {
     fishCombineAnimationActive = true;
     fishCombineStartTime = Date.now();
 
-    // Create physics bodies for each part at their current locked positions
+    // Create physics bodies for each locked part at their current positions
     const centerX = canvas.width / 2;
     const partSize = 121.5;  // Same as square size
 
-    // Select image map based on current group
-    let partImageMap;
-    if (currentGroup === 'fish') {
-        partImageMap = [
-            { image: fishTailImage, type: 'tail' },      // hulie1 (bottom)
-            { image: fishBody2Image, type: 'body2' },    // hulie2
-            { image: fishBody1Image, type: 'body1' },    // hulie3
-            { image: fishHeadImage, type: 'head' }       // hulie4 (top)
-        ];
-    } else {
-        partImageMap = [
-            { image: legoHairImage, type: 'hair' },      // hulie1 (bottom)
-            { image: legoHeadImage, type: 'head' },      // hulie2
-            { image: legoBodyImage, type: 'body' },      // hulie3
-            { image: legoLegsImage, type: 'legs' }       // hulie4 (top)
-        ];
-    }
-
     fishPartBodies = [];
+
     columns.forEach((column, idx) => {
+        if (!lockedColumns[idx]) {
+            console.warn(`Column ${idx} is not locked, skipping`);
+            return;
+        }
+
+        // Find the locked square at center for this column
+        let lockedSquare = null;
+        column.squares.forEach(square => {
+            if (square.hasPart && square.partGroup === currentGroup) {
+                const squareCenter = square.x + square.size / 2;
+                if (Math.abs(squareCenter - centerX) < 10) {  // Within 10px of center
+                    lockedSquare = square;
+                }
+            }
+        });
+
+        if (!lockedSquare) {
+            console.warn(`No locked ${currentGroup} square found in column ${idx}`);
+            return;
+        }
+
         const partY = column.y + column.height / 2;
+        const partImage = lockedSquare.partImage;
 
         // Create physics body for this part
         const partBody = Bodies.rectangle(
@@ -1905,10 +1975,12 @@ function combineFishParts() {
 
         fishPartBodies.push({
             body: partBody,
-            image: partImageMap[idx].image,
-            type: partImageMap[idx].type,
+            image: partImage,
+            type: lockedSquare.partType,
             index: idx
         });
+
+        console.log(`Created physics body for ${lockedSquare.partType} at column ${idx}`);
 
         // Apply downward force to hulie3, hulie2, hulie1 (indices 2, 1, 0)
         if (idx === 0 || idx === 1 || idx === 2) {
@@ -1917,11 +1989,11 @@ function combineFishParts() {
                 x: 0,
                 y: downwardForce
             });
-            console.log(`Applied downward force to ${partImageMap[idx].type}`);
+            console.log(`Applied downward force to ${lockedSquare.partType}`);
         }
     });
 
-    console.log(`${currentGroup} parts created with physics - starting combination animation...`);
+    console.log(`${currentGroup} parts created (${fishPartBodies.length} bodies) - starting combination animation...`);
 }
 
 // Update fish combination animation
