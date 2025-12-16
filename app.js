@@ -122,6 +122,7 @@ let detectionWindowStartTime = null;  // When detection window started
 let detectionWindowDuration = 1300;  // 1.3 seconds
 let lockedColumns = [false, false, false, false];  // Which columns are locked in place
 let matchCount = 0;  // How many columns are matched
+let currentGroup = null;  // Current group type: 'fish' or 'lego'
 
 // Full match completion
 let fullMatchComplete = false;  // All 4 fish matched
@@ -146,6 +147,15 @@ let fishHeadImage = null;
 let fishBody1Image = null;
 let fishBody2Image = null;
 let fishTailImage = null;
+
+// Lego person images for slot machine
+let legoHairImage = null;
+let legoHeadImage = null;
+let legoBodyImage = null;
+let legoLegsImage = null;
+
+// Complete images
+let completeLegoImage = null;
 
 // Load images for horizontal mode
 function loadImages() {
@@ -196,10 +206,31 @@ function loadImages() {
     fishTailImage.src = '鱼尾巴.png';
     fishTailImage.onload = () => console.log('Fish tail image loaded');
 
-    // Load complete fish image
+    // Load lego person images
+    legoHairImage = new Image();
+    legoHairImage.src = '乐高头发.png';
+    legoHairImage.onload = () => console.log('Lego hair image loaded');
+
+    legoHeadImage = new Image();
+    legoHeadImage.src = '乐高头.png';
+    legoHeadImage.onload = () => console.log('Lego head image loaded');
+
+    legoBodyImage = new Image();
+    legoBodyImage.src = '乐高身体.png';
+    legoBodyImage.onload = () => console.log('Lego body image loaded');
+
+    legoLegsImage = new Image();
+    legoLegsImage.src = '乐高下半身.png';
+    legoLegsImage.onload = () => console.log('Lego legs image loaded');
+
+    // Load complete images
     completeFishImage = new Image();
     completeFishImage.src = '完整的鱼.png';
     completeFishImage.onload = () => console.log('Complete fish image loaded');
+
+    completeLegoImage = new Image();
+    completeLegoImage.src = '乐高人.png';
+    completeLegoImage.onload = () => console.log('Complete lego image loaded');
 }
 
 function checkImagesLoaded() {
@@ -887,10 +918,10 @@ function drawCustom() {
                     ctx.lineWidth = 1;
                     ctx.strokeRect(square.x, squareY, square.size, square.size);
 
-                    // Draw fish image if this square has one
-                    if (square.hasFish && column.fishImage && column.fishImage.complete) {
+                    // Draw part image if this square has one
+                    if (square.hasPart && column.partImage && column.partImage.complete) {
                         ctx.drawImage(
-                            column.fishImage,
+                            column.partImage,
                             square.x,
                             squareY,
                             square.size,
@@ -982,7 +1013,7 @@ function drawCustom() {
         ctx.stroke();
 
         // Draw text prompt
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';  // Black color
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('Swipe Down!', centerX, arrowY - arrowSize);
@@ -990,35 +1021,40 @@ function drawCustom() {
         ctx.restore();
     }
 
-    // Draw complete fish with shadow
-    if (completeFishBody && completeFishImage && completeFishImage.complete) {
-        ctx.save();
+    // Draw complete object (fish or lego) with shadow
+    if (completeFishBody) {
+        // Select correct complete image based on current group
+        const completeImage = currentGroup === 'fish' ? completeFishImage : completeLegoImage;
 
-        const fishX = completeFishBody.position.x;
-        const fishY = completeFishBody.position.y;
-        const fishWidth = 300;
-        const fishHeight = 200;
+        if (completeImage && completeImage.complete) {
+            ctx.save();
 
-        // Draw shadow
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.beginPath();
-        ctx.ellipse(fishX, fishY + fishHeight/2 + 20, fishWidth/2, 30, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+            const objX = completeFishBody.position.x;
+            const objY = completeFishBody.position.y;
+            const objWidth = 300;
+            const objHeight = 200;
 
-        // Draw fish image
-        ctx.translate(fishX, fishY);
-        ctx.rotate(completeFishBody.angle);
-        ctx.drawImage(
-            completeFishImage,
-            -fishWidth / 2,
-            -fishHeight / 2,
-            fishWidth,
-            fishHeight
-        );
+            // Draw shadow
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2, 30, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
 
-        ctx.restore();
+            // Draw complete image
+            ctx.translate(objX, objY);
+            ctx.rotate(completeFishBody.angle);
+            ctx.drawImage(
+                completeImage,
+                -objWidth / 2,
+                -objHeight / 2,
+                objWidth,
+                objHeight
+            );
+
+            ctx.restore();
+        }
     }
 
     // Draw image-based cardboard (no rotation, display images as-is) - TOPMOST LAYER
@@ -1426,17 +1462,39 @@ function initializeSlotMachine() {
     const squareSize = 121.5;  // Enlarged by 8% from 112.5 (112.5 * 1.08 = 121.5)
     const squareGap = 25;   // Increased gap for larger squares
 
-    // Fish image assignments per row (from bottom to top):
+    // Randomly select group: fish or lego
+    currentGroup = Math.random() < 0.5 ? 'fish' : 'lego';
+    console.log(`Slot machine initialized with group: ${currentGroup}`);
+
+    // Image assignments per row (from bottom to top):
+    // For fish group:
     // hulie1 (row 0, bottom) -> 鱼尾巴 (fishTail)
     // hulie2 (row 1) -> 鱼身体2 (fishBody2)
     // hulie3 (row 2) -> 鱼身体1 (fishBody1)
     // hulie4 (row 3, top) -> 鱼头 (fishHead)
-    const fishImageMap = [
-        { type: 'fishTail', image: fishTailImage, group: 'fish' },
-        { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
-        { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
-        { type: 'fishHead', image: fishHeadImage, group: 'fish' }
-    ];
+
+    // For lego group:
+    // hulie1 (row 0, bottom) -> 乐高头发 (legoHair)
+    // hulie2 (row 1) -> 乐高头 (legoHead)
+    // hulie3 (row 2) -> 乐高身体 (legoBody)
+    // hulie4 (row 3, top) -> 乐高下半身 (legoLegs)
+
+    let imageMap;
+    if (currentGroup === 'fish') {
+        imageMap = [
+            { type: 'fishTail', image: fishTailImage, group: 'fish' },
+            { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
+            { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+            { type: 'fishHead', image: fishHeadImage, group: 'fish' }
+        ];
+    } else {
+        imageMap = [
+            { type: 'legoHair', image: legoHairImage, group: 'lego' },
+            { type: 'legoHead', image: legoHeadImage, group: 'lego' },
+            { type: 'legoBody', image: legoBodyImage, group: 'lego' },
+            { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
+        ];
+    }
 
     for (let row = 0; row < numColumns; row++) {
         const column = {
@@ -1447,24 +1505,24 @@ function initializeSlotMachine() {
             currentSpeed: columnBaseSpeed[row],
             peakSpeed: columnBaseSpeed[row] * 8,  // 8x base speed when flipped (more obvious effect)
             acceleration: 0,
-            fishType: fishImageMap[row].type,
-            fishImage: fishImageMap[row].image,
-            fishGroup: fishImageMap[row].group
+            partType: imageMap[row].type,
+            partImage: imageMap[row].image,
+            partGroup: imageMap[row].group
         };
 
         // Create initial squares for this row (moving horizontally from left to right)
         // Start far left of viewport so generation is not visible
-        // Randomly insert fish images (every 2-4 squares)
+        // Randomly insert part images (every 2-4 squares)
         for (let i = 0; i < squaresPerColumn; i++) {
-            // Randomly decide if this square has a fish (33% chance, ensuring multiple fish appear)
-            const hasFish = Math.random() < 0.33;
+            // Randomly decide if this square has a part (33% chance, ensuring multiple parts appear)
+            const hasPart = Math.random() < 0.33;
             column.squares.push({
                 x: i * (squareSize + squareGap) - canvas.width,  // Start one full screen width to the left
                 size: squareSize,
                 color: '#888888',  // Gray color
-                hasFish: hasFish,
-                fishType: hasFish ? fishImageMap[row].type : null,
-                fishGroup: hasFish ? fishImageMap[row].group : null
+                hasPart: hasPart,
+                partType: hasPart ? imageMap[row].type : null,
+                partGroup: hasPart ? imageMap[row].group : null
             });
         }
 
@@ -1509,12 +1567,12 @@ function updateSlotMachine() {
                     // Place this square to the left of the leftmost square
                     square.x = leftmostX - (square.size + 25);
 
-                    // Randomly regenerate fish (maintain probability)
+                    // Randomly regenerate parts (maintain probability)
                     // Increase probability if partial matches exist
-                    const fishProbability = matchCount >= 2 ? 0.5 : 0.33;
-                    square.hasFish = Math.random() < fishProbability;
-                    square.fishType = square.hasFish ? column.fishType : null;
-                    square.fishGroup = square.hasFish ? column.fishGroup : null;
+                    const partProbability = matchCount >= 2 ? 0.5 : 0.33;
+                    square.hasPart = Math.random() < partProbability;
+                    square.partType = square.hasPart ? column.partType : null;
+                    square.partGroup = square.hasPart ? column.partGroup : null;
                 }
             });
         }
@@ -1632,8 +1690,8 @@ function checkMatchingInWindow() {
             // Already locked, use the locked symbol
             symbolsAtCenter.push({
                 columnIndex: idx,
-                fishType: column.fishType,
-                fishGroup: column.fishGroup,
+                partType: column.partType,
+                partGroup: column.partGroup,
                 locked: true
             });
             return;
@@ -1652,39 +1710,39 @@ function checkMatchingInWindow() {
             }
         });
 
-        if (closestSquare && closestSquare.hasFish) {
+        if (closestSquare && closestSquare.hasPart) {
             symbolsAtCenter.push({
                 columnIndex: idx,
-                fishType: closestSquare.fishType,
-                fishGroup: closestSquare.fishGroup,
+                partType: closestSquare.partType,
+                partGroup: closestSquare.partGroup,
                 square: closestSquare,
                 locked: false
             });
         } else {
             symbolsAtCenter.push({
                 columnIndex: idx,
-                fishType: null,
-                fishGroup: null,
+                partType: null,
+                partGroup: null,
                 locked: false
             });
         }
     });
 
     // Check for matches (any 2 columns with same group)
-    const fishSymbols = symbolsAtCenter.filter(s => s.fishGroup === 'fish');
-    const unlockedFishSymbols = fishSymbols.filter(s => !s.locked);
+    const matchingSymbols = symbolsAtCenter.filter(s => s.partGroup === currentGroup);
+    const unlockedMatchingSymbols = matchingSymbols.filter(s => !s.locked);
 
-    // If we found at least 2 fish symbols (same group), trigger match
+    // If we found at least 2 symbols (same group), trigger match
     // Must include at least one unlocked column to trigger new match
-    if (fishSymbols.length >= 2 && unlockedFishSymbols.length >= 1) {
-        const newMatchCount = fishSymbols.length;
+    if (matchingSymbols.length >= 2 && unlockedMatchingSymbols.length >= 1) {
+        const newMatchCount = matchingSymbols.length;
 
         // Only trigger if this is actually a new/better match
         if (newMatchCount > matchCount) {
-            console.log(`Match detected! ${newMatchCount} fish symbols aligned!`);
+            console.log(`Match detected! ${newMatchCount} ${currentGroup} symbols aligned!`);
 
             // Lock the newly matched columns at center
-            fishSymbols.forEach(symbol => {
+            matchingSymbols.forEach(symbol => {
                 if (!symbol.locked) {
                     lockColumnAtCenter(symbol.columnIndex);
                 }
@@ -1701,7 +1759,7 @@ function checkMatchingInWindow() {
             if (matchCount === 4) {
                 playFullMatchAnimation();
             } else {
-                playPartialMatchAnimation(fishSymbols.map(s => s.columnIndex));
+                playPartialMatchAnimation(matchingSymbols.map(s => s.columnIndex));
             }
         }
     }
@@ -1712,12 +1770,12 @@ function lockColumnAtCenter(columnIndex) {
     const column = columns[columnIndex];
     const centerX = canvas.width / 2;
 
-    // Find the fish square closest to center
+    // Find the part square closest to center
     let targetSquare = null;
     let minDistance = Infinity;
 
     column.squares.forEach(square => {
-        if (square.hasFish) {
+        if (square.hasPart) {
             const squareCenter = square.x + square.size / 2;
             const distance = Math.abs(squareCenter - centerX);
             if (distance < minDistance) {
@@ -1742,7 +1800,7 @@ function lockColumnAtCenter(columnIndex) {
     lockedColumns[columnIndex] = true;
     column.currentSpeed = 0;
 
-    console.log(`Column ${columnIndex} locked at center with ${column.fishType}`);
+    console.log(`Column ${columnIndex} locked at center with ${column.partType}`);
 }
 
 // Play partial match animation (2-3 columns matched)
@@ -1761,9 +1819,9 @@ function playFullMatchAnimation() {
     console.log('Show down arrow prompt - waiting for user to swipe down');
 }
 
-// Combine fish parts into complete fish
+// Combine parts into complete object (fish or lego)
 function combineFishParts() {
-    console.log('Combining fish parts...');
+    console.log(`Combining ${currentGroup} parts...`);
 
     // Hide down arrow
     showDownArrow = false;
@@ -1772,21 +1830,33 @@ function combineFishParts() {
     fishCombineAnimationActive = true;
     fishCombineStartTime = Date.now();
 
-    // Create physics bodies for each fish part at their current locked positions
+    // Create physics bodies for each part at their current locked positions
     const centerX = canvas.width / 2;
     const partSize = 121.5;  // Same as square size
-    const fishImageMap = [
-        { image: fishTailImage, type: 'tail' },      // hulie1 (bottom)
-        { image: fishBody2Image, type: 'body2' },    // hulie2
-        { image: fishBody1Image, type: 'body1' },    // hulie3
-        { image: fishHeadImage, type: 'head' }       // hulie4 (top)
-    ];
+
+    // Select image map based on current group
+    let partImageMap;
+    if (currentGroup === 'fish') {
+        partImageMap = [
+            { image: fishTailImage, type: 'tail' },      // hulie1 (bottom)
+            { image: fishBody2Image, type: 'body2' },    // hulie2
+            { image: fishBody1Image, type: 'body1' },    // hulie3
+            { image: fishHeadImage, type: 'head' }       // hulie4 (top)
+        ];
+    } else {
+        partImageMap = [
+            { image: legoHairImage, type: 'hair' },      // hulie1 (bottom)
+            { image: legoHeadImage, type: 'head' },      // hulie2
+            { image: legoBodyImage, type: 'body' },      // hulie3
+            { image: legoLegsImage, type: 'legs' }       // hulie4 (top)
+        ];
+    }
 
     fishPartBodies = [];
     columns.forEach((column, idx) => {
         const partY = column.y + column.height / 2;
 
-        // Create physics body for this fish part
+        // Create physics body for this part
         const partBody = Bodies.rectangle(
             centerX,
             partY,
@@ -1805,8 +1875,8 @@ function combineFishParts() {
 
         fishPartBodies.push({
             body: partBody,
-            image: fishImageMap[idx].image,
-            type: fishImageMap[idx].type,
+            image: partImageMap[idx].image,
+            type: partImageMap[idx].type,
             index: idx
         });
 
@@ -1817,11 +1887,11 @@ function combineFishParts() {
                 x: 0,
                 y: downwardForce
             });
-            console.log(`Applied downward force to ${fishImageMap[idx].type}`);
+            console.log(`Applied downward force to ${partImageMap[idx].type}`);
         }
     });
 
-    console.log('Fish parts created with physics - starting combination animation...');
+    console.log(`${currentGroup} parts created with physics - starting combination animation...`);
 }
 
 // Update fish combination animation
@@ -1940,6 +2010,7 @@ function resetGame() {
     isDraggingFish = false;
     fishCombineAnimationActive = false;
     fishCombineStartTime = null;
+    currentGroup = null;  // Reset group selection
 
     // Restart slot machine
     slotMachineActive = true;
