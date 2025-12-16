@@ -112,7 +112,8 @@ let isFlipping = false;
 let flipStartTime = 0;
 let flipAccelDuration = 300;  // 0.3 seconds acceleration
 let flipPeakDuration = 500;  // 0.5 seconds at peak speed
-let flipDecelDuration = 1000;  // 1 second deceleration
+let flipDecelDuration = 1300;  // 1.3 seconds deceleration (extended 30%)
+let detectionDelayAfterFlip = 1400;  // 1.4 seconds after flip starts
 
 // Slot machine game mechanics
 let firstFlipTriggered = false;  // Track if first flip has occurred
@@ -984,7 +985,7 @@ function drawCustom() {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('向下甩动手机!', centerX, arrowY - arrowSize);
+        ctx.fillText('Swipe Down!', centerX, arrowY - arrowSize);
 
         ctx.restore();
     }
@@ -1576,11 +1577,11 @@ function updateFlipPhysics() {
     const decelStart = flipAccelDuration + flipPeakDuration;
     const inDecelPhase = elapsed >= decelStart;
 
-    // Start detection window when entering deceleration phase (only if first flip triggered)
-    if (inDecelPhase && !detectionWindowActive && firstFlipTriggered) {
+    // Start detection window 1.4 seconds after flip (during deceleration phase)
+    if (elapsed >= detectionDelayAfterFlip && !detectionWindowActive && firstFlipTriggered && !fullMatchComplete) {
         detectionWindowActive = true;
         detectionWindowStartTime = Date.now();
-        console.log('Detection window started (1.3s) - checking for matches...');
+        console.log('Detection window started (1.3s) at 1.4s after flip - checking for matches...');
     }
 
     columns.forEach((column, idx) => {
