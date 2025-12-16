@@ -114,10 +114,24 @@ let flipAccelDuration = 300;  // 0.3 seconds acceleration
 let flipPeakDuration = 500;  // 0.5 seconds at peak speed
 let flipDecelDuration = 1000;  // 1 second deceleration
 
+// Slot machine game mechanics
+let firstFlipTriggered = false;  // Track if first flip has occurred
+let detectionWindowActive = false;  // Is the 1.3s detection window active
+let detectionWindowStartTime = null;  // When detection window started
+let detectionWindowDuration = 1300;  // 1.3 seconds
+let lockedColumns = [false, false, false, false];  // Which columns are locked in place
+let matchCount = 0;  // How many columns are matched
+
+// Fish images for slot machine
+let fishHeadImage = null;
+let fishBody1Image = null;
+let fishBody2Image = null;
+let fishTailImage = null;
+
 // Load images for horizontal mode
 function loadImages() {
     cardboardImage = new Image();
-    cardboardImage.src = '纸板.png';
+    cardboardImage.src = '纸板1.png';  // Changed to 纸板1.png
     cardboardImage.onload = () => {
         console.log('Cardboard image loaded');
         checkImagesLoaded();
@@ -145,6 +159,23 @@ function loadImages() {
     gripImage.onerror = () => {
         console.error('Failed to load grip image');
     };
+
+    // Load fish images for slot machine
+    fishHeadImage = new Image();
+    fishHeadImage.src = '鱼头.png';
+    fishHeadImage.onload = () => console.log('Fish head image loaded');
+
+    fishBody1Image = new Image();
+    fishBody1Image.src = '鱼身体1.png';
+    fishBody1Image.onload = () => console.log('Fish body 1 image loaded');
+
+    fishBody2Image = new Image();
+    fishBody2Image.src = '鱼身体2.png';
+    fishBody2Image.onload = () => console.log('Fish body 2 image loaded');
+
+    fishTailImage = new Image();
+    fishTailImage.src = '鱼尾巴.png';
+    fishTailImage.onload = () => console.log('Fish tail image loaded');
 }
 
 function checkImagesLoaded() {
@@ -356,16 +387,23 @@ function triggerHorizontalMode() {
 
 // Create image display (no rope, images slide horizontally from side to center)
 function createImageCardboard(dropFromLeft) {
-    // Calculate dimensions (scaled up by 21% from 214x80)
-    // Note: After 90° rotation, width and height are swapped visually
-    const cardboardWidth = 259;  // 214 * 1.21 = 258.94
-    const cardboardHeight = 97;  // 80 * 1.21 = 96.8
+    // Calculate dimensions (scaled up by 39.15% from 214x80: 1.21 * 1.15 = 1.3915)
+    const cardboardWidth = 298;  // 214 * 1.3915 = 297.78
+    const cardboardHeight = 111;  // 80 * 1.3915 = 111.32
 
     // Position at vertical midpoint, horizontal edge
     const sideMidpointY = canvas.height / 2;  // Middle of screen height
 
-    // Start position (at side edge)
-    imageStartX = dropFromLeft ? -cardboardHeight : canvas.width + cardboardHeight;  // Start offscreen (use height since rotated)
+    // Store which side we're dropping from
+    imageDropFromLeft = dropFromLeft;
+
+    // Calculate total extension including grip on the left
+    const gripW = cardboardWidth * 0.8;  // 238.4
+    const overlapAmount = cardboardWidth * 0.06;  // 6% overlap
+    const totalLeftExtension = gripW - overlapAmount;  // How far grip extends left of cardboard
+
+    // Start position - far enough offscreen to hide grip image too
+    imageStartX = dropFromLeft ? -totalLeftExtension - 50 : canvas.width + cardboardWidth/2 + 50;
 
     // Final position (screen center)
     imageFinalX = canvas.width / 2;
@@ -397,7 +435,7 @@ function updateImageRevealAnimation() {
     // Ease out cubic for smooth deceleration (starts fast, slows down at end)
     const easedProgress = 1 - Math.pow(1 - progress, 3);
 
-    // Calculate current X position (horizontal movement)
+    // Calculate current X position (horizontal movement toward center)
     const currentX = imageStartX + (imageFinalX - imageStartX) * easedProgress;
 
     // Update body position
@@ -406,10 +444,26 @@ function updateImageRevealAnimation() {
         y: imageCardboardBody.position.y  // Y stays constant
     });
 
-    // Stop animation when complete
-    if (progress >= 1) {
+    // Calculate if all images are fully visible on screen
+    const cardboardWidth = 298;
+    const cardboardHeight = 111;
+    const gripW = cardboardWidth * 0.8;  // 238.4
+    const overlapAmount = cardboardWidth * 0.06;
+
+    // Grip is aligned with LEFT side of cardboard
+    const gripCenterX = -cardboardWidth / 2 - gripW / 2 + overlapAmount;
+
+    // Calculate absolute positions of all image edges
+    const leftmostEdge = currentX + gripCenterX - gripW / 2;  // Grip's left edge
+    const rightmostEdge = currentX + cardboardWidth / 2;       // Cardboard's right edge
+
+    // Check if all images are fully visible
+    const fullyVisible = leftmostEdge >= 0 && rightmostEdge <= canvas.width;
+
+    // Stop animation when all images are fully visible OR time complete
+    if (fullyVisible || progress >= 1) {
         imageRevealStartTime = null;
-        console.log('Image reveal animation complete - images at screen center');
+        console.log('Image reveal complete - all images fully visible on screen');
     }
 }
 
@@ -756,67 +810,6 @@ function drawCustom() {
         ctx.stroke();
     }
 
-    // Draw image-based cardboard (no rotation, display images as-is)
-    if (imageCardboardBody && imagesLoaded) {
-        ctx.save();
-        ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
-        ctx.rotate(imageCardboardBody.angle);
-
-        const cardboardWidth = 259;  // Scaled up by 21%
-        const cardboardHeight = 97;  // Scaled up by 21%
-
-        // No rotation - display images in their original orientation
-
-        // Layer 1: Draw cardboard image (bottom layer)
-        if (cardboardImage && cardboardImage.complete) {
-            ctx.drawImage(
-                cardboardImage,
-                -cardboardWidth / 2,   // x: center horizontally
-                -cardboardHeight / 2,  // y: center vertically
-                cardboardWidth,        // original width
-                cardboardHeight        // original height
-            );
-        }
-
-        // Layer 2: Draw phone image on top (middle layer, scaled 70%)
-        if (phoneImage && phoneImage.complete) {
-            const phoneW = cardboardWidth * 0.7;   // 259 * 0.7 = 181.3
-            const phoneH = cardboardHeight * 0.7;  // 97 * 0.7 = 67.9
-            ctx.drawImage(
-                phoneImage,
-                -phoneW / 2,  // Center horizontally
-                -phoneH / 2,  // Center vertically
-                phoneW,
-                phoneH
-            );
-        }
-
-        // Layer 3: Draw grip image (top layer, 6% overlap)
-        // Grip bottom overlaps with cardboard top
-        if (gripImage && gripImage.complete) {
-            const gripW = cardboardWidth * 0.8;   // 259 * 0.8 = 207.2
-            const gripH = cardboardHeight * 0.8;  // 97 * 0.8 = 77.6
-
-            // Calculate 6% overlap (based on cardboard height)
-            const overlapAmount = cardboardHeight * 0.06;  // 97 * 0.06 = 5.82
-
-            // Cardboard top is at y = -cardboardHeight / 2
-            // Grip bottom should overlap with cardboard top by 6%
-            // Grip center should be at: cardboard_top - grip_half_height + overlap
-            const gripCenterY = -cardboardHeight / 2 - gripH / 2 + overlapAmount;
-
-            ctx.drawImage(
-                gripImage,
-                -gripW / 2,      // Center horizontally
-                gripCenterY,     // Position with 6% overlap at top
-                gripW,
-                gripH
-            );
-        }
-
-        ctx.restore();
-    }
-
     // Draw slot machine rows (if active) - horizontal movement
     if (slotMachineActive && columns.length > 0) {
         ctx.save();
@@ -826,26 +819,106 @@ function drawCustom() {
             column.squares.forEach(square => {
                 // Only draw if square is visible on screen
                 if (square.x + square.size > 0 && square.x < canvas.width) {
+                    const squareY = column.y + (column.height - square.size) / 2;
+
+                    // Draw gray square background
                     ctx.fillStyle = square.color;
-                    ctx.fillRect(
-                        square.x,
-                        column.y + (column.height - square.size) / 2,  // Center in row
-                        square.size,
-                        square.size
-                    );
+                    ctx.fillRect(square.x, squareY, square.size, square.size);
 
                     // Add subtle border for depth
                     ctx.strokeStyle = '#666666';
                     ctx.lineWidth = 1;
-                    ctx.strokeRect(
-                        square.x,
-                        column.y + (column.height - square.size) / 2,
-                        square.size,
-                        square.size
-                    );
+                    ctx.strokeRect(square.x, squareY, square.size, square.size);
+
+                    // Draw fish image if this square has one
+                    if (square.hasFish && column.fishImage && column.fishImage.complete) {
+                        ctx.drawImage(
+                            column.fishImage,
+                            square.x,
+                            squareY,
+                            square.size,
+                            square.size
+                        );
+                    }
                 }
             });
         });
+
+        // Draw center line (中奖线) - visual indicator
+        if (firstFlipTriggered) {
+            const centerX = canvas.width / 2;
+            const totalHeight = canvas.height * 0.9;
+            const verticalOffset = (canvas.height - totalHeight) / 2;
+
+            ctx.strokeStyle = detectionWindowActive ? 'rgba(255, 215, 0, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash(detectionWindowActive ? [] : [10, 5]);  // Solid when detecting, dashed otherwise
+            ctx.beginPath();
+            ctx.moveTo(centerX, verticalOffset);
+            ctx.lineTo(centerX, verticalOffset + totalHeight);
+            ctx.stroke();
+            ctx.setLineDash([]);  // Reset dash
+        }
+
+        ctx.restore();
+    }
+
+    // Draw image-based cardboard (no rotation, display images as-is) - TOPMOST LAYER
+    if (imageCardboardBody && imagesLoaded) {
+        ctx.save();
+        ctx.translate(imageCardboardBody.position.x, imageCardboardBody.position.y);
+        ctx.rotate(imageCardboardBody.angle);
+
+        const cardboardWidth = 298;  // Scaled up by 39.15% (1.21 * 1.15)
+        const cardboardHeight = 111;  // Scaled up by 39.15%
+
+        // No rotation - display images in their original orientation
+
+        // Layer 1: Draw cardboard image (bottom layer)
+        if (cardboardImage && cardboardImage.complete) {
+            ctx.drawImage(
+                cardboardImage,
+                -cardboardWidth / 2,   // x: center horizontally
+                -cardboardHeight / 2,  // y: center vertically
+                cardboardWidth,        // width
+                cardboardHeight        // height
+            );
+        }
+
+        // Layer 2: Draw phone image on top (middle layer, scaled 70%)
+        if (phoneImage && phoneImage.complete) {
+            const phoneW = cardboardWidth * 0.7;   // 208.6
+            const phoneH = cardboardHeight * 0.7;  // 77.7
+            ctx.drawImage(
+                phoneImage,
+                -phoneW / 2,  // Center horizontally
+                -phoneH / 2,  // Center vertically
+                phoneW,
+                phoneH
+            );
+        }
+
+        // Layer 3: Draw grip image (aligned with LEFT side, 6% overlap)
+        if (gripImage && gripImage.complete) {
+            const gripW = cardboardWidth * 0.8;   // 238.4
+            const gripH = cardboardHeight * 0.8;  // 88.8
+
+            // Calculate 6% overlap (based on cardboard WIDTH since aligned horizontally)
+            const overlapAmount = cardboardWidth * 0.06;  // 17.88
+
+            // Cardboard left edge is at x = -cardboardWidth / 2 = -149
+            // Grip should be positioned to the left with 6% overlap
+            // Grip center X = cardboard_left_edge - grip_half_width + overlap
+            const gripCenterX = -cardboardWidth / 2 - gripW / 2 + overlapAmount;
+
+            ctx.drawImage(
+                gripImage,
+                gripCenterX,     // Position with 6% overlap at left side
+                -gripH / 2,      // Center vertically (aligned with cardboard midpoint)
+                gripW,
+                gripH
+            );
+        }
 
         ctx.restore();
     }
@@ -1195,6 +1268,18 @@ function initializeSlotMachine() {
     const squareSize = 121.5;  // Enlarged by 8% from 112.5 (112.5 * 1.08 = 121.5)
     const squareGap = 25;   // Increased gap for larger squares
 
+    // Fish image assignments per row (from bottom to top):
+    // hulie1 (row 0, bottom) -> 鱼头 (fishHead)
+    // hulie2 (row 1) -> 鱼身体1 (fishBody1)
+    // hulie3 (row 2) -> 鱼身体2 (fishBody2)
+    // hulie4 (row 3, top) -> 鱼尾巴 (fishTail)
+    const fishImageMap = [
+        { type: 'fishHead', image: fishHeadImage, group: 'fish' },
+        { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+        { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
+        { type: 'fishTail', image: fishTailImage, group: 'fish' }
+    ];
+
     for (let row = 0; row < numColumns; row++) {
         const column = {
             y: verticalOffset + row * rowHeight,  // Y position of this row (centered)
@@ -1203,16 +1288,25 @@ function initializeSlotMachine() {
             baseSpeed: columnBaseSpeed[row],
             currentSpeed: columnBaseSpeed[row],
             peakSpeed: columnBaseSpeed[row] * 8,  // 8x base speed when flipped (more obvious effect)
-            acceleration: 0
+            acceleration: 0,
+            fishType: fishImageMap[row].type,
+            fishImage: fishImageMap[row].image,
+            fishGroup: fishImageMap[row].group
         };
 
         // Create initial squares for this row (moving horizontally from left to right)
         // Start far left of viewport so generation is not visible
+        // Randomly insert fish images (every 2-4 squares)
         for (let i = 0; i < squaresPerColumn; i++) {
+            // Randomly decide if this square has a fish (33% chance, ensuring multiple fish appear)
+            const hasFish = Math.random() < 0.33;
             column.squares.push({
                 x: i * (squareSize + squareGap) - canvas.width,  // Start one full screen width to the left
                 size: squareSize,
-                color: '#888888'  // Gray color
+                color: '#888888',  // Gray color
+                hasFish: hasFish,
+                fishType: hasFish ? fishImageMap[row].type : null,
+                fishGroup: hasFish ? fishImageMap[row].group : null
             });
         }
 
@@ -1229,28 +1323,43 @@ function updateSlotMachine() {
         updateFlipPhysics();
     }
 
+    // Check if we're in detection window during deceleration
+    if (detectionWindowActive) {
+        checkMatchingInWindow();
+    }
+
     // Update each row
     columns.forEach((column, rowIndex) => {
-        // Move squares to the right
-        column.squares.forEach(square => {
-            square.x += column.currentSpeed;
-        });
+        // Only move if column is not locked
+        if (!lockedColumns[rowIndex]) {
+            // Move squares to the right
+            column.squares.forEach(square => {
+                square.x += column.currentSpeed;
+            });
 
-        // Check if any square went off right edge, regenerate at left
-        column.squares.forEach((square, idx) => {
-            if (square.x > canvas.width + square.size) {
-                // Find the leftmost square in this row
-                let leftmostX = Infinity;
-                column.squares.forEach(s => {
-                    if (s.x < leftmostX) {
-                        leftmostX = s.x;
-                    }
-                });
+            // Check if any square went off right edge, regenerate at left
+            column.squares.forEach((square, idx) => {
+                if (square.x > canvas.width + square.size) {
+                    // Find the leftmost square in this row
+                    let leftmostX = Infinity;
+                    column.squares.forEach(s => {
+                        if (s.x < leftmostX) {
+                            leftmostX = s.x;
+                        }
+                    });
 
-                // Place this square to the left of the leftmost square
-                square.x = leftmostX - (square.size + 10);
-            }
-        });
+                    // Place this square to the left of the leftmost square
+                    square.x = leftmostX - (square.size + 25);
+
+                    // Randomly regenerate fish (maintain probability)
+                    // Increase probability if partial matches exist
+                    const fishProbability = matchCount >= 2 ? 0.5 : 0.33;
+                    square.hasFish = Math.random() < fishProbability;
+                    square.fishType = square.hasFish ? column.fishType : null;
+                    square.fishGroup = square.hasFish ? column.fishGroup : null;
+                }
+            });
+        }
     });
 }
 
@@ -1261,13 +1370,32 @@ function triggerSlotMachineFlip() {
     isFlipping = true;
     flipStartTime = Date.now();
 
-    console.log('Slot machine flip triggered! Accelerating...');
+    // Mark first flip as triggered
+    if (!firstFlipTriggered) {
+        firstFlipTriggered = true;
+        console.log('First flip triggered! Game mechanics activated.');
+    } else {
+        console.log('Subsequent flip triggered!');
+    }
 
     // Add random variation to each column's response
+    // Skip locked columns
+    const hasMatches = matchCount >= 2;
     columns.forEach((column, idx) => {
-        const variation = 0.8 + Math.random() * 0.4;  // 0.8 to 1.2 multiplier
+        // Skip locked columns
+        if (lockedColumns[idx]) return;
+
+        let variation = 0.8 + Math.random() * 0.4;  // 0.8 to 1.2 multiplier
+
+        // If we have partial matches, slightly adjust speed variation to favor alignment
+        if (hasMatches) {
+            variation = 0.9 + Math.random() * 0.2;  // Tighter variation for better matching
+        }
+
         column.peakSpeed = column.baseSpeed * 8 * variation;  // 8x for more obvious effect
     });
+
+    console.log('Slot machine flip accelerating...');
 }
 
 // Update flip physics (acceleration, peak, deceleration)
@@ -1278,32 +1406,199 @@ function updateFlipPhysics() {
     if (elapsed > totalDuration) {
         // Flip complete, return to base speed
         isFlipping = false;
+        detectionWindowActive = false;  // Close detection window
         columns.forEach((column, idx) => {
-            column.currentSpeed = column.baseSpeed;
+            if (!lockedColumns[idx]) {
+                column.currentSpeed = column.baseSpeed;
+            }
         });
         console.log('Flip complete - returned to base speed');
         return;
     }
 
+    const decelStart = flipAccelDuration + flipPeakDuration;
+    const inDecelPhase = elapsed >= decelStart;
+
+    // Start detection window when entering deceleration phase (only if first flip triggered)
+    if (inDecelPhase && !detectionWindowActive && firstFlipTriggered) {
+        detectionWindowActive = true;
+        detectionWindowStartTime = Date.now();
+        console.log('Detection window started (1.3s) - checking for matches...');
+    }
+
     columns.forEach((column, idx) => {
+        // Skip locked columns
+        if (lockedColumns[idx]) {
+            column.currentSpeed = 0;  // Locked columns don't move
+            return;
+        }
+
         if (elapsed < flipAccelDuration) {
             // Acceleration phase (0 to 0.3s) - ease-out quad
             const progress = elapsed / flipAccelDuration;
             const eased = 1 - Math.pow(1 - progress, 2);
             column.currentSpeed = column.baseSpeed + (column.peakSpeed - column.baseSpeed) * eased;
 
-        } else if (elapsed < flipAccelDuration + flipPeakDuration) {
+        } else if (elapsed < decelStart) {
             // Peak phase (0.3s to 0.8s) - maintain peak speed
             column.currentSpeed = column.peakSpeed;
 
         } else {
             // Deceleration phase (0.8s to 1.8s) - ease-out cubic
-            const decelStart = flipAccelDuration + flipPeakDuration;
             const decelProgress = (elapsed - decelStart) / flipDecelDuration;
             const eased = 1 - Math.pow(1 - decelProgress, 3);
             column.currentSpeed = column.peakSpeed - (column.peakSpeed - column.baseSpeed) * eased;
         }
     });
+}
+
+// Check for matching symbols in the detection window
+function checkMatchingInWindow() {
+    // Check if detection window has expired
+    if (!detectionWindowStartTime) return;
+
+    const elapsed = Date.now() - detectionWindowStartTime;
+    if (elapsed > detectionWindowDuration) {
+        detectionWindowActive = false;
+        detectionWindowStartTime = null;
+        console.log('Detection window closed - no match found');
+        return;
+    }
+
+    // Find which symbol is at the center line (中奖线) for each column
+    const centerX = canvas.width / 2;
+    const symbolsAtCenter = [];
+
+    columns.forEach((column, idx) => {
+        if (lockedColumns[idx]) {
+            // Already locked, use the locked symbol
+            symbolsAtCenter.push({
+                columnIndex: idx,
+                fishType: column.fishType,
+                fishGroup: column.fishGroup,
+                locked: true
+            });
+            return;
+        }
+
+        // Find the square closest to center line
+        let closestSquare = null;
+        let minDistance = Infinity;
+
+        column.squares.forEach(square => {
+            const squareCenter = square.x + square.size / 2;
+            const distance = Math.abs(squareCenter - centerX);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestSquare = square;
+            }
+        });
+
+        if (closestSquare && closestSquare.hasFish) {
+            symbolsAtCenter.push({
+                columnIndex: idx,
+                fishType: closestSquare.fishType,
+                fishGroup: closestSquare.fishGroup,
+                square: closestSquare,
+                locked: false
+            });
+        } else {
+            symbolsAtCenter.push({
+                columnIndex: idx,
+                fishType: null,
+                fishGroup: null,
+                locked: false
+            });
+        }
+    });
+
+    // Check for matches (any 2 columns with same group)
+    const fishSymbols = symbolsAtCenter.filter(s => s.fishGroup === 'fish');
+    const unlockedFishSymbols = fishSymbols.filter(s => !s.locked);
+
+    // If we found at least 2 fish symbols (same group), trigger match
+    // Must include at least one unlocked column to trigger new match
+    if (fishSymbols.length >= 2 && unlockedFishSymbols.length >= 1) {
+        const newMatchCount = fishSymbols.length;
+
+        // Only trigger if this is actually a new/better match
+        if (newMatchCount > matchCount) {
+            console.log(`Match detected! ${newMatchCount} fish symbols aligned!`);
+
+            // Lock the newly matched columns at center
+            fishSymbols.forEach(symbol => {
+                if (!symbol.locked) {
+                    lockColumnAtCenter(symbol.columnIndex);
+                }
+            });
+
+            // Update match count
+            matchCount = newMatchCount;
+
+            // Close detection window after successful match
+            detectionWindowActive = false;
+            detectionWindowStartTime = null;
+
+            // Play match animation
+            if (matchCount === 4) {
+                playFullMatchAnimation();
+            } else {
+                playPartialMatchAnimation(fishSymbols.map(s => s.columnIndex));
+            }
+        }
+    }
+}
+
+// Lock a column at the center line
+function lockColumnAtCenter(columnIndex) {
+    const column = columns[columnIndex];
+    const centerX = canvas.width / 2;
+
+    // Find the fish square closest to center
+    let targetSquare = null;
+    let minDistance = Infinity;
+
+    column.squares.forEach(square => {
+        if (square.hasFish) {
+            const squareCenter = square.x + square.size / 2;
+            const distance = Math.abs(squareCenter - centerX);
+            if (distance < minDistance) {
+                minDistance = distance;
+                targetSquare = square;
+            }
+        }
+    });
+
+    if (targetSquare) {
+        // Calculate offset needed to center this square
+        const squareCenter = targetSquare.x + targetSquare.size / 2;
+        const offset = centerX - squareCenter;
+
+        // Adjust all squares in this column
+        column.squares.forEach(square => {
+            square.x += offset;
+        });
+    }
+
+    // Lock this column
+    lockedColumns[columnIndex] = true;
+    column.currentSpeed = 0;
+
+    console.log(`Column ${columnIndex} locked at center with ${column.fishType}`);
+}
+
+// Play partial match animation (2-3 columns matched)
+function playPartialMatchAnimation(matchedIndices) {
+    console.log(`Partial match animation for columns: ${matchedIndices.join(', ')}`);
+    // TODO: Add visual effects (highlight, scale, particles)
+    // TODO: Play sound effect
+}
+
+// Play full match animation (all 4 columns matched)
+function playFullMatchAnimation() {
+    console.log('FULL MATCH! All 4 fish parts aligned! 🎉');
+    // TODO: Add special celebration effects
+    // TODO: Play special sound effect
 }
 
 // Remove all elements
