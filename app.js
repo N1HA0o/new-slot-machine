@@ -117,9 +117,9 @@ let detectionDelayAfterFlip = 1400;  // 1.4 seconds after flip starts
 
 // Slot machine game mechanics
 let firstFlipTriggered = false;  // Track if first flip has occurred
-let detectionWindowActive = false;  // Is the 1.3s detection window active
+let detectionWindowActive = false;  // Is the 1.8s detection window active
 let detectionWindowStartTime = null;  // When detection window started
-let detectionWindowDuration = 1300;  // 1.3 seconds
+let detectionWindowDuration = 1800;  // 1.8 seconds (extended for easier matching)
 let lockedColumns = [false, false, false, false];  // Which columns are locked in place
 let matchCount = 0;  // How many columns are matched
 let currentGroup = null;  // Current group type: 'fish' or 'lego'
@@ -209,19 +209,35 @@ function loadImages() {
     // Load lego person images
     legoHairImage = new Image();
     legoHairImage.src = '乐高头发.png';
-    legoHairImage.onload = () => console.log('Lego hair image loaded');
+    legoHairImage.onload = () => {
+        console.log('✓ Lego hair image loaded (hulie1)');
+        console.log('  Dimensions:', legoHairImage.width, 'x', legoHairImage.height);
+    };
+    legoHairImage.onerror = () => console.error('✗ Failed to load: 乐高头发.png');
 
     legoHeadImage = new Image();
     legoHeadImage.src = '乐高头.png';
-    legoHeadImage.onload = () => console.log('Lego head image loaded');
+    legoHeadImage.onload = () => {
+        console.log('✓ Lego head image loaded (hulie2)');
+        console.log('  Dimensions:', legoHeadImage.width, 'x', legoHeadImage.height);
+    };
+    legoHeadImage.onerror = () => console.error('✗ Failed to load: 乐高头.png');
 
     legoBodyImage = new Image();
     legoBodyImage.src = '乐高身体.png';
-    legoBodyImage.onload = () => console.log('Lego body image loaded');
+    legoBodyImage.onload = () => {
+        console.log('✓ Lego body image loaded (hulie3)');
+        console.log('  Dimensions:', legoBodyImage.width, 'x', legoBodyImage.height);
+    };
+    legoBodyImage.onerror = () => console.error('✗ Failed to load: 乐高身体.png');
 
     legoLegsImage = new Image();
     legoLegsImage.src = '乐高下半身.png';
-    legoLegsImage.onload = () => console.log('Lego legs image loaded');
+    legoLegsImage.onload = () => {
+        console.log('✓ Lego legs image loaded (hulie4)');
+        console.log('  Dimensions:', legoLegsImage.width, 'x', legoLegsImage.height);
+    };
+    legoLegsImage.onerror = () => console.error('✗ Failed to load: 乐高下半身.png');
 
     // Load complete images
     completeFishImage = new Image();
@@ -921,24 +937,41 @@ function drawCustom() {
                 if (square.x + square.size > 0 && square.x < canvas.width) {
                     const squareY = column.y + (column.height - square.size) / 2;
 
-                    // Draw gray square background
+                    // Draw gray square background (always draw this)
                     ctx.fillStyle = square.color;
                     ctx.fillRect(square.x, squareY, square.size, square.size);
 
-                    // Add subtle border for depth
+                    // Add subtle border for depth (always draw this)
                     ctx.strokeStyle = '#666666';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(square.x, squareY, square.size, square.size);
 
                     // Draw part image if this square has one
-                    if (square.hasPart && square.partImage && square.partImage.complete) {
-                        ctx.drawImage(
-                            square.partImage,
-                            square.x,
-                            squareY,
-                            square.size,
-                            square.size
-                        );
+                    if (square.hasPart && square.partImage) {
+                        if (square.partImage.complete && square.partImage.naturalWidth > 0) {
+                            // Image is fully loaded, draw it
+                            try {
+                                ctx.drawImage(
+                                    square.partImage,
+                                    square.x,
+                                    squareY,
+                                    square.size,
+                                    square.size
+                                );
+                            } catch (e) {
+                                console.error('Error drawing image:', square.partType, e);
+                                // Draw placeholder on error
+                                ctx.fillStyle = 'rgba(200, 200, 200, 0.5)';
+                                ctx.fillRect(square.x + 5, squareY + 5, square.size - 10, square.size - 10);
+                            }
+                        } else {
+                            // Image still loading, draw loading placeholder
+                            ctx.fillStyle = 'rgba(150, 150, 150, 0.3)';
+                            ctx.fillRect(square.x + 5, squareY + 5, square.size - 10, square.size - 10);
+                            ctx.strokeStyle = '#999999';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(square.x + 5, squareY + 5, square.size - 10, square.size - 10);
+                        }
                     }
                 }
             });
@@ -1521,6 +1554,15 @@ function initializeSlotMachine() {
         { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
     ];
 
+    // Log image loading status
+    console.log('Image loading status:');
+    console.log('  Fish images:', fishImageMap.every(m => m.image && m.image.complete) ? '✓ All loaded' : '⚠ Some pending');
+    console.log('  Lego images:', legoImageMap.every(m => m.image && m.image.complete) ? '✓ All loaded' : '⚠ Some pending');
+    legoImageMap.forEach((item, idx) => {
+        const status = item.image && item.image.complete ? '✓' : '⚠';
+        console.log(`    Row ${idx} (hulie${idx + 1}): ${status} ${item.type}`);
+    });
+
     for (let row = 0; row < numColumns; row++) {
         const column = {
             y: verticalOffset + row * rowHeight,  // Y position of this row (centered)
@@ -1554,6 +1596,12 @@ function initializeSlotMachine() {
                     partGroup = 'lego';
                     partType = legoImageMap[row].type;
                     partImage = legoImageMap[row].image;
+                }
+
+                // Validate image reference
+                if (!partImage) {
+                    console.error(`Missing image for ${partGroup} ${partType} at row ${row}`);
+                    hasPart = false;  // Don't create part if image is missing
                 }
             }
 
@@ -1634,10 +1682,22 @@ function updateSlotMachine() {
                             square.partGroup = 'fish';
                             square.partType = fishImageMap[rowIndex].type;
                             square.partImage = fishImageMap[rowIndex].image;
+
+                            // Validate image reference
+                            if (!square.partImage) {
+                                console.error(`Regenerate: Missing fish image at row ${rowIndex}`);
+                                square.hasPart = false;
+                            }
                         } else {
                             square.partGroup = 'lego';
                             square.partType = legoImageMap[rowIndex].type;
                             square.partImage = legoImageMap[rowIndex].image;
+
+                            // Validate image reference
+                            if (!square.partImage) {
+                                console.error(`Regenerate: Missing lego image at row ${rowIndex}`);
+                                square.hasPart = false;
+                            }
                         }
                     } else {
                         square.partType = null;
@@ -1710,7 +1770,7 @@ function updateFlipPhysics() {
     if (elapsed >= detectionDelayAfterFlip && !detectionWindowActive && firstFlipTriggered && !fullMatchComplete) {
         detectionWindowActive = true;
         detectionWindowStartTime = Date.now();
-        console.log('Detection window started (1.3s) at 1.4s after flip - checking for matches...');
+        console.log('Detection window started (1.8s) at 1.4s after flip - checking for matches...');
     }
 
     columns.forEach((column, idx) => {
@@ -1748,7 +1808,7 @@ function checkMatchingInWindow() {
     if (elapsed > detectionWindowDuration) {
         detectionWindowActive = false;
         detectionWindowStartTime = null;
-        console.log('Detection window closed - no match found');
+        console.log('Detection window closed after 1.8s - no match found');
         return;
     }
 
