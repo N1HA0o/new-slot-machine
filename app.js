@@ -226,11 +226,23 @@ function loadImages() {
     // Load complete images
     completeFishImage = new Image();
     completeFishImage.src = '完整的鱼.png';
-    completeFishImage.onload = () => console.log('Complete fish image loaded');
+    completeFishImage.onload = () => {
+        console.log('✓ Complete fish image loaded successfully');
+        console.log('Fish image dimensions:', completeFishImage.width, 'x', completeFishImage.height);
+    };
+    completeFishImage.onerror = () => {
+        console.error('✗ Failed to load complete fish image: 完整的鱼.png');
+    };
 
     completeLegoImage = new Image();
     completeLegoImage.src = '乐高人.png';
-    completeLegoImage.onload = () => console.log('Complete lego image loaded');
+    completeLegoImage.onload = () => {
+        console.log('✓ Complete lego image loaded successfully');
+        console.log('Lego image dimensions:', completeLegoImage.width, 'x', completeLegoImage.height);
+    };
+    completeLegoImage.onerror = () => {
+        console.error('✗ Failed to load complete lego image: 乐高人.png');
+    };
 }
 
 function checkImagesLoaded() {
@@ -1023,28 +1035,30 @@ function drawCustom() {
 
     // Draw complete object (fish or lego) with shadow
     if (completeFishBody) {
+        ctx.save();
+
+        const objX = completeFishBody.position.x;
+        const objY = completeFishBody.position.y;
+        const objWidth = 300;
+        const objHeight = 200;
+
+        // Draw shadow
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2, 30, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
         // Select correct complete image based on current group
         const completeImage = currentGroup === 'fish' ? completeFishImage : completeLegoImage;
 
+        // Draw complete image (or fallback placeholder)
+        ctx.translate(objX, objY);
+        ctx.rotate(completeFishBody.angle);
+
         if (completeImage && completeImage.complete) {
-            ctx.save();
-
-            const objX = completeFishBody.position.x;
-            const objY = completeFishBody.position.y;
-            const objWidth = 300;
-            const objHeight = 200;
-
-            // Draw shadow
-            ctx.save();
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.beginPath();
-            ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2, 30, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-
-            // Draw complete image
-            ctx.translate(objX, objY);
-            ctx.rotate(completeFishBody.angle);
+            // Draw actual image
             ctx.drawImage(
                 completeImage,
                 -objWidth / 2,
@@ -1052,9 +1066,25 @@ function drawCustom() {
                 objWidth,
                 objHeight
             );
+        } else {
+            // Draw fallback placeholder if image not loaded
+            ctx.fillStyle = currentGroup === 'fish' ? 'rgba(0, 100, 200, 0.8)' : 'rgba(255, 200, 0, 0.8)';
+            ctx.fillRect(-objWidth / 2, -objHeight / 2, objWidth, objHeight);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-objWidth / 2, -objHeight / 2, objWidth, objHeight);
 
-            ctx.restore();
+            // Draw text
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(currentGroup === 'fish' ? 'FISH' : 'LEGO', 0, 0);
+
+            console.warn(`Complete ${currentGroup} image not loaded yet`);
         }
+
+        ctx.restore();
     }
 
     // Draw image-based cardboard (no rotation, display images as-is) - TOPMOST LAYER
@@ -1926,15 +1956,21 @@ function updateFishCombineAnimation() {
         });
     });
 
-    // When animation completes, create complete fish
+    // Log progress periodically
+    if (Math.floor(progress * 10) !== Math.floor((progress - 0.01) * 10)) {
+        console.log(`Combination animation progress: ${Math.floor(progress * 100)}%`);
+    }
+
+    // When animation completes, create complete object
     if (progress >= 1) {
+        console.log('Animation complete! Calling finishFishCombination...');
         finishFishCombination();
     }
 }
 
-// Finish fish combination - create complete fish
+// Finish fish combination - create complete object
 function finishFishCombination() {
-    console.log('Combination animation complete - creating complete fish!');
+    console.log(`Combination animation complete - creating complete ${currentGroup}!`);
 
     // Remove fish part bodies
     fishPartBodies.forEach(part => {
@@ -1946,17 +1982,17 @@ function finishFishCombination() {
     slotMachineActive = false;
     fishCombineAnimationActive = false;
 
-    // Create complete fish body at center
+    // Create complete object body at center
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-    const fishWidth = 300;
-    const fishHeight = 200;
+    const objWidth = 300;
+    const objHeight = 200;
 
     completeFishBody = Bodies.rectangle(
         centerX,
         centerY,
-        fishWidth,
-        fishHeight,
+        objWidth,
+        objHeight,
         {
             density: 0.001,
             friction: 0.8,
@@ -1966,7 +2002,12 @@ function finishFishCombination() {
     );
 
     Composite.add(engine.world, completeFishBody);
-    console.log('Complete fish created - now interactive!');
+
+    // Check image loading status
+    const completeImage = currentGroup === 'fish' ? completeFishImage : completeLegoImage;
+    console.log(`Complete ${currentGroup} created at (${centerX}, ${centerY})`);
+    console.log(`Image loaded: ${completeImage && completeImage.complete ? 'YES' : 'NO'}`);
+    console.log(`completeFishBody exists: ${completeFishBody ? 'YES' : 'NO'}`);
 }
 
 // Update complete fish interaction
