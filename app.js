@@ -122,6 +122,24 @@ let detectionWindowDuration = 1300;  // 1.3 seconds
 let lockedColumns = [false, false, false, false];  // Which columns are locked in place
 let matchCount = 0;  // How many columns are matched
 
+// Full match completion
+let fullMatchComplete = false;  // All 4 fish matched
+let showDownArrow = false;  // Show down arrow prompt
+let arrowAnimationTime = null;  // Arrow animation timer
+let arrowAnimationInterval = 1300;  // 1.3 seconds
+
+// Fish combination animation
+let fishCombineAnimationActive = false;
+let fishCombineStartTime = null;
+let fishCombineDuration = 1500;  // 1.5 seconds
+let fishPartBodies = [];  // Physics bodies for fish parts during animation
+
+// Complete fish
+let completeFishBody = null;
+let completeFishImage = null;
+let isDraggingFish = false;
+let dragOffset = { x: 0, y: 0 };
+
 // Fish images for slot machine
 let fishHeadImage = null;
 let fishBody1Image = null;
@@ -176,6 +194,11 @@ function loadImages() {
     fishTailImage = new Image();
     fishTailImage.src = '鱼尾巴.png';
     fishTailImage.onload = () => console.log('Fish tail image loaded');
+
+    // Load complete fish image
+    completeFishImage = new Image();
+    completeFishImage.src = '完整的鱼.png';
+    completeFishImage.onload = () => console.log('Complete fish image loaded');
 }
 
 function checkImagesLoaded() {
@@ -235,6 +258,8 @@ function init() {
         checkDelayedImageTrigger();
         checkSlotMachineStart();
         updateSlotMachine();
+        updateFishCombineAnimation();
+        updateCompleteFish();
     });
 
     // Request motion permission for iOS
@@ -242,6 +267,14 @@ function init() {
 
     // Handle window resize
     window.addEventListener('resize', handleResize);
+
+    // Add mouse/touch event listeners for fish dragging
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchmove', handleTouchMove);
+    canvas.addEventListener('touchend', handleTouchEnd);
 }
 
 // Request motion sensor permission (iOS 13+)
@@ -267,6 +300,29 @@ function requestMotionPermission() {
 // Add motion event listeners
 function addMotionListeners() {
     window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('devicemotion', handleMotion);
+}
+
+// Handle device motion (acceleration) for down swipe detection
+let lastAccelerationY = 0;
+function handleMotion(event) {
+    if (!event.acceleration) return;
+
+    const accelY = event.acceleration.y || 0;
+
+    // Detect downward swipe when full match is complete
+    if (fullMatchComplete && !completeFishBody && !fishCombineAnimationActive) {
+        // Detect strong downward acceleration (phone swiped down)
+        const accelChange = accelY - lastAccelerationY;
+
+        // Threshold for downward swipe (negative Y is down in device coordinates)
+        if (accelChange < -10) {  // Strong downward acceleration
+            console.log('Down swipe detected! Combining fish parts...');
+            combineFishParts();
+        }
+    }
+
+    lastAccelerationY = accelY;
 }
 
 // Handle device orientation with medium sensitivity
@@ -811,7 +867,7 @@ function drawCustom() {
     }
 
     // Draw slot machine rows (if active) - horizontal movement
-    if (slotMachineActive && columns.length > 0) {
+    if (slotMachineActive && columns.length > 0 && !fishCombineAnimationActive) {
         ctx.save();
 
         columns.forEach((column, rowIdx) => {
@@ -859,6 +915,107 @@ function drawCustom() {
             ctx.stroke();
             ctx.setLineDash([]);  // Reset dash
         }
+
+        ctx.restore();
+    }
+
+    // Draw fish parts during combination animation
+    if (fishCombineAnimationActive && fishPartBodies.length > 0) {
+        ctx.save();
+
+        fishPartBodies.forEach(part => {
+            if (part.image && part.image.complete) {
+                const partX = part.body.position.x;
+                const partY = part.body.position.y;
+                const partSize = 121.5;
+
+                // Draw fish part image with rotation
+                ctx.save();
+                ctx.translate(partX, partY);
+                ctx.rotate(part.body.angle);
+                ctx.drawImage(
+                    part.image,
+                    -partSize / 2,
+                    -partSize / 2,
+                    partSize,
+                    partSize
+                );
+                ctx.restore();
+            }
+        });
+
+        ctx.restore();
+    }
+
+    // Draw down arrow prompt when full match complete
+    if (showDownArrow && !completeFishBody) {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        // Animate arrow up and down
+        const elapsed = Date.now() - arrowAnimationTime;
+        const cycleTime = elapsed % arrowAnimationInterval;
+        const animProgress = cycleTime / arrowAnimationInterval;
+        const bounce = Math.sin(animProgress * Math.PI * 2) * 20;
+
+        // Draw arrow
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+
+        const arrowY = centerY + bounce;
+        const arrowSize = 60;
+
+        // Draw arrow shape (pointing down)
+        ctx.beginPath();
+        ctx.moveTo(centerX, arrowY + arrowSize);  // Bottom point
+        ctx.lineTo(centerX - arrowSize/2, arrowY);  // Top left
+        ctx.lineTo(centerX - arrowSize/4, arrowY);  // Inner left
+        ctx.lineTo(centerX - arrowSize/4, arrowY - arrowSize/2);  // Shaft left
+        ctx.lineTo(centerX + arrowSize/4, arrowY - arrowSize/2);  // Shaft right
+        ctx.lineTo(centerX + arrowSize/4, arrowY);  // Inner right
+        ctx.lineTo(centerX + arrowSize/2, arrowY);  // Top right
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw text prompt
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('向下甩动手机!', centerX, arrowY - arrowSize);
+
+        ctx.restore();
+    }
+
+    // Draw complete fish with shadow
+    if (completeFishBody && completeFishImage && completeFishImage.complete) {
+        ctx.save();
+
+        const fishX = completeFishBody.position.x;
+        const fishY = completeFishBody.position.y;
+        const fishWidth = 300;
+        const fishHeight = 200;
+
+        // Draw shadow
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(fishX, fishY + fishHeight/2 + 20, fishWidth/2, 30, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Draw fish image
+        ctx.translate(fishX, fishY);
+        ctx.rotate(completeFishBody.angle);
+        ctx.drawImage(
+            completeFishImage,
+            -fishWidth / 2,
+            -fishHeight / 2,
+            fishWidth,
+            fishHeight
+        );
 
         ctx.restore();
     }
@@ -1269,15 +1426,15 @@ function initializeSlotMachine() {
     const squareGap = 25;   // Increased gap for larger squares
 
     // Fish image assignments per row (from bottom to top):
-    // hulie1 (row 0, bottom) -> 鱼头 (fishHead)
-    // hulie2 (row 1) -> 鱼身体1 (fishBody1)
-    // hulie3 (row 2) -> 鱼身体2 (fishBody2)
-    // hulie4 (row 3, top) -> 鱼尾巴 (fishTail)
+    // hulie1 (row 0, bottom) -> 鱼尾巴 (fishTail)
+    // hulie2 (row 1) -> 鱼身体2 (fishBody2)
+    // hulie3 (row 2) -> 鱼身体1 (fishBody1)
+    // hulie4 (row 3, top) -> 鱼头 (fishHead)
     const fishImageMap = [
-        { type: 'fishHead', image: fishHeadImage, group: 'fish' },
-        { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+        { type: 'fishTail', image: fishTailImage, group: 'fish' },
         { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
-        { type: 'fishTail', image: fishTailImage, group: 'fish' }
+        { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
+        { type: 'fishHead', image: fishHeadImage, group: 'fish' }
     ];
 
     for (let row = 0; row < numColumns; row++) {
@@ -1597,8 +1754,198 @@ function playPartialMatchAnimation(matchedIndices) {
 // Play full match animation (all 4 columns matched)
 function playFullMatchAnimation() {
     console.log('FULL MATCH! All 4 fish parts aligned! 🎉');
-    // TODO: Add special celebration effects
-    // TODO: Play special sound effect
+    fullMatchComplete = true;
+    showDownArrow = true;
+    arrowAnimationTime = Date.now();
+    console.log('Show down arrow prompt - waiting for user to swipe down');
+}
+
+// Combine fish parts into complete fish
+function combineFishParts() {
+    console.log('Combining fish parts...');
+
+    // Hide down arrow
+    showDownArrow = false;
+
+    // Start combination animation
+    fishCombineAnimationActive = true;
+    fishCombineStartTime = Date.now();
+
+    // Create physics bodies for each fish part at their current locked positions
+    const centerX = canvas.width / 2;
+    const partSize = 121.5;  // Same as square size
+    const fishImageMap = [
+        { image: fishTailImage, type: 'tail' },      // hulie1 (bottom)
+        { image: fishBody2Image, type: 'body2' },    // hulie2
+        { image: fishBody1Image, type: 'body1' },    // hulie3
+        { image: fishHeadImage, type: 'head' }       // hulie4 (top)
+    ];
+
+    fishPartBodies = [];
+    columns.forEach((column, idx) => {
+        const partY = column.y + column.height / 2;
+
+        // Create physics body for this fish part
+        const partBody = Bodies.rectangle(
+            centerX,
+            partY,
+            partSize,
+            partSize,
+            {
+                density: 0.002,
+                friction: 0.5,
+                frictionAir: 0.08,
+                restitution: 0.6,  // Bouncy for spring effect
+                render: { fillStyle: 'transparent' }
+            }
+        );
+
+        Composite.add(engine.world, partBody);
+
+        fishPartBodies.push({
+            body: partBody,
+            image: fishImageMap[idx].image,
+            type: fishImageMap[idx].type,
+            index: idx
+        });
+
+        // Apply downward force to hulie3, hulie2, hulie1 (indices 2, 1, 0)
+        if (idx === 0 || idx === 1 || idx === 2) {
+            const downwardForce = 0.008;
+            Body.applyForce(partBody, partBody.position, {
+                x: 0,
+                y: downwardForce
+            });
+            console.log(`Applied downward force to ${fishImageMap[idx].type}`);
+        }
+    });
+
+    console.log('Fish parts created with physics - starting combination animation...');
+}
+
+// Update fish combination animation
+function updateFishCombineAnimation() {
+    if (!fishCombineAnimationActive) return;
+
+    const elapsed = Date.now() - fishCombineStartTime;
+    const progress = Math.min(elapsed / fishCombineDuration, 1);
+
+    // Apply spring force to pull all parts toward center
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+
+    fishPartBodies.forEach(part => {
+        const dx = centerX - part.body.position.x;
+        const dy = centerY - part.body.position.y;
+
+        // Spring force - stronger as time progresses
+        const springStrength = 0.0001 * (1 + progress * 2);
+        const forceX = dx * springStrength;
+        const forceY = dy * springStrength;
+
+        Body.applyForce(part.body, part.body.position, {
+            x: forceX,
+            y: forceY
+        });
+
+        // Add damping to prevent too much oscillation
+        Body.setVelocity(part.body, {
+            x: part.body.velocity.x * 0.95,
+            y: part.body.velocity.y * 0.95
+        });
+    });
+
+    // When animation completes, create complete fish
+    if (progress >= 1) {
+        finishFishCombination();
+    }
+}
+
+// Finish fish combination - create complete fish
+function finishFishCombination() {
+    console.log('Combination animation complete - creating complete fish!');
+
+    // Remove fish part bodies
+    fishPartBodies.forEach(part => {
+        Composite.remove(engine.world, part.body);
+    });
+    fishPartBodies = [];
+
+    // Hide slot machine
+    slotMachineActive = false;
+    fishCombineAnimationActive = false;
+
+    // Create complete fish body at center
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const fishWidth = 300;
+    const fishHeight = 200;
+
+    completeFishBody = Bodies.rectangle(
+        centerX,
+        centerY,
+        fishWidth,
+        fishHeight,
+        {
+            density: 0.001,
+            friction: 0.8,
+            restitution: 0.3,
+            render: { fillStyle: 'transparent' }
+        }
+    );
+
+    Composite.add(engine.world, completeFishBody);
+    console.log('Complete fish created - now interactive!');
+}
+
+// Update complete fish interaction
+function updateCompleteFish() {
+    if (!completeFishBody) return;
+
+    // Check if fish fell off screen
+    if (completeFishBody.position.y > canvas.height + 200) {
+        console.log('Fish fell off screen - resetting game...');
+        resetGame();
+    }
+}
+
+// Reset entire game
+function resetGame() {
+    console.log('Resetting game to initial state...');
+
+    // Remove complete fish
+    if (completeFishBody) {
+        Composite.remove(engine.world, completeFishBody);
+        completeFishBody = null;
+    }
+
+    // Remove fish part bodies if any
+    if (fishPartBodies.length > 0) {
+        fishPartBodies.forEach(part => {
+            Composite.remove(engine.world, part.body);
+        });
+        fishPartBodies = [];
+    }
+
+    // Reset all game state
+    fullMatchComplete = false;
+    showDownArrow = false;
+    firstFlipTriggered = false;
+    detectionWindowActive = false;
+    detectionWindowStartTime = null;
+    lockedColumns = [false, false, false, false];
+    matchCount = 0;
+    isFlipping = false;
+    isDraggingFish = false;
+    fishCombineAnimationActive = false;
+    fishCombineStartTime = null;
+
+    // Restart slot machine
+    slotMachineActive = true;
+    slotMachineStartTime = Date.now();
+    initializeSlotMachine();
+
+    console.log('Game reset complete - slot machine restarted');
 }
 
 // Remove all elements
@@ -1636,6 +1983,92 @@ function handleResize() {
     render.canvas.height = canvas.height;
     render.options.width = canvas.width;
     render.options.height = canvas.height;
+}
+
+// Mouse and touch event handlers for fish dragging
+function handleMouseDown(e) {
+    if (!completeFishBody) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const dx = mouseX - completeFishBody.position.x;
+    const dy = mouseY - completeFishBody.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < 150) {
+        isDraggingFish = true;
+        dragOffset.x = dx;
+        dragOffset.y = dy;
+        Body.setStatic(completeFishBody, true);
+    }
+}
+
+function handleMouseMove(e) {
+    if (!isDraggingFish || !completeFishBody) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    Body.setPosition(completeFishBody, {
+        x: mouseX - dragOffset.x,
+        y: mouseY - dragOffset.y
+    });
+}
+
+function handleMouseUp(e) {
+    if (!isDraggingFish || !completeFishBody) return;
+
+    isDraggingFish = false;
+    Body.setStatic(completeFishBody, false);
+    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
+}
+
+function handleTouchStart(e) {
+    if (!completeFishBody) return;
+    e.preventDefault();
+
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    const dx = touchX - completeFishBody.position.x;
+    const dy = touchY - completeFishBody.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < 150) {
+        isDraggingFish = true;
+        dragOffset.x = dx;
+        dragOffset.y = dy;
+        Body.setStatic(completeFishBody, true);
+    }
+}
+
+function handleTouchMove(e) {
+    if (!isDraggingFish || !completeFishBody) return;
+    e.preventDefault();
+
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    Body.setPosition(completeFishBody, {
+        x: touchX - dragOffset.x,
+        y: touchY - dragOffset.y
+    });
+}
+
+function handleTouchEnd(e) {
+    if (!isDraggingFish || !completeFishBody) return;
+    e.preventDefault();
+
+    isDraggingFish = false;
+    Body.setStatic(completeFishBody, false);
+    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
 }
 
 // Start the application
