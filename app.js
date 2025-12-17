@@ -2186,12 +2186,12 @@ function updateFishCombineAnimation() {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
 
-    // Phase 1 (0-30%): Only hulie1, 2, 3 move downward
+    // Phase 1 (0-30%): Only hulie4, 3, 2 move downward
     if (progress < 0.3) {
         const phaseProgress = progress / 0.3;
         fishPartBodies.forEach(part => {
-            // Only apply downward force to indices 0, 1, 2 (hulie1, 2, 3)
-            if (part.index === 0 || part.index === 1 || part.index === 2) {
+            // Only apply downward force to indices 3, 2, 1 (hulie4, 3, 2)
+            if (part.index === 3 || part.index === 2 || part.index === 1) {
                 const downwardForce = 0.015 * (1 - phaseProgress);  // Decreasing force
                 Body.applyForce(part.body, part.body.position, {
                     x: 0,
@@ -2264,8 +2264,8 @@ function finishFishCombination() {
         objWidth,
         objHeight,
         {
-            isStatic: false,  // Enable gravity immediately - will fall if not dragged
-            density: 0.015,  // Heavy enough to fall naturally
+            isStatic: true,  // Stay in place - no gravity until dragged
+            density: 0.015,  // Heavy for realistic fall when released
             friction: 0.1,  // Low friction to prevent sticking
             frictionAir: 0.02,  // Slight air resistance for realistic fall
             restitution: 0.3,
@@ -2386,9 +2386,11 @@ function handleMouseDown(e) {
         isDraggingFish = true;
         dragOffset.x = dx;
         dragOffset.y = dy;
-        lastDragPosition = { x: mouseX, y: mouseY, time: Date.now() };
+        lastDragPosition = { x: completeFishBody.position.x, y: completeFishBody.position.y, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
-        Body.setStatic(completeFishBody, true);
+        // Enable physics/inertia system when drag starts
+        Body.setStatic(completeFishBody, false);
+        console.log('Drag started - inertia system enabled');
     }
 }
 
@@ -2453,9 +2455,11 @@ function handleTouchStart(e) {
         isDraggingFish = true;
         dragOffset.x = dx;
         dragOffset.y = dy;
-        lastDragPosition = { x: touchX, y: touchY, time: Date.now() };
+        lastDragPosition = { x: completeFishBody.position.x, y: completeFishBody.position.y, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
-        Body.setStatic(completeFishBody, true);
+        // Enable physics/inertia system when drag starts
+        Body.setStatic(completeFishBody, false);
+        console.log('Drag started (touch) - inertia system enabled');
     }
 }
 
