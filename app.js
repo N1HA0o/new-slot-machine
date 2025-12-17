@@ -141,8 +141,6 @@ let completeFishBody = null;
 let completeFishImage = null;
 let isDraggingFish = false;
 let dragOffset = { x: 0, y: 0 };
-let lastDragPosition = { x: 0, y: 0, time: 0 };
-let dragVelocity = { x: 0, y: 0 };
 
 // Fish images for slot machine
 let fishHeadImage = null;
@@ -2307,12 +2305,6 @@ function finishFishCombination() {
 function updateCompleteFish() {
     if (!completeFishBody) return;
 
-    // Ensure no rotation during physics
-    if (!isDraggingFish) {
-        Body.setAngle(completeFishBody, 0);
-        Body.setAngularVelocity(completeFishBody, 0);
-    }
-
     // Check if fish fell off screen
     if (completeFishBody.position.y > canvas.height + 200) {
         console.log('Fish fell off screen - resetting game...');
@@ -2416,9 +2408,6 @@ function handleMouseDown(e) {
         dragOffset.x = dx;
         dragOffset.y = dy;
 
-        lastDragPosition = { x: mouseX, y: mouseY, time: Date.now() };
-        dragVelocity = { x: 0, y: 0 };
-
         // Keep static during drag to prevent jittering
         Body.setStatic(completeFishBody, true);
         console.log('Drag started - locked to finger');
@@ -2432,22 +2421,11 @@ function handleMouseMove(e) {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Calculate velocity for physics feedback
-    const now = Date.now();
-    const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
-    dragVelocity.x = (mouseX - lastDragPosition.x) / dt * 1000;  // pixels per second
-    dragVelocity.y = (mouseY - lastDragPosition.y) / dt * 1000;
-
     // Move image maintaining offset from finger
     Body.setPosition(completeFishBody, {
         x: mouseX - dragOffset.x,
         y: mouseY - dragOffset.y
     });
-
-    // Reset angle to 0 (no rotation)
-    Body.setAngle(completeFishBody, 0);
-
-    lastDragPosition = { x: mouseX, y: mouseY, time: now };
 }
 
 function handleMouseUp(e) {
@@ -2459,17 +2437,13 @@ function handleMouseUp(e) {
     engine.gravity.x = 0;
     engine.gravity.y = 1;
 
-    // Enable physics - gravity will take over
+    // Enable physics - pure vertical gravity will take over
     Body.setStatic(completeFishBody, false);
 
-    // Clear all velocity - let gravity work naturally from current position
+    // Clear all velocity - start from zero
     Body.setVelocity(completeFishBody, { x: 0, y: 0 });
 
-    // No rotation or angular velocity
-    Body.setAngle(completeFishBody, 0);
-    Body.setAngularVelocity(completeFishBody, 0);
-
-    console.log('Released - falling straight down with pure vertical gravity');
+    console.log('Released - falling straight down from current position');
 }
 
 function handleTouchStart(e) {
@@ -2492,9 +2466,6 @@ function handleTouchStart(e) {
         dragOffset.x = dx;
         dragOffset.y = dy;
 
-        lastDragPosition = { x: touchX, y: touchY, time: Date.now() };
-        dragVelocity = { x: 0, y: 0 };
-
         // Keep static during drag to prevent jittering
         Body.setStatic(completeFishBody, true);
         console.log('Drag started (touch) - locked to finger');
@@ -2510,22 +2481,11 @@ function handleTouchMove(e) {
     const touchX = touch.clientX - rect.left;
     const touchY = touch.clientY - rect.top;
 
-    // Calculate velocity for physics feedback
-    const now = Date.now();
-    const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
-    dragVelocity.x = (touchX - lastDragPosition.x) / dt * 1000;  // pixels per second
-    dragVelocity.y = (touchY - lastDragPosition.y) / dt * 1000;
-
     // Move image maintaining offset from finger
     Body.setPosition(completeFishBody, {
         x: touchX - dragOffset.x,
         y: touchY - dragOffset.y
     });
-
-    // Reset angle to 0 (no rotation)
-    Body.setAngle(completeFishBody, 0);
-
-    lastDragPosition = { x: touchX, y: touchY, time: now };
 }
 
 function handleTouchEnd(e) {
@@ -2538,17 +2498,13 @@ function handleTouchEnd(e) {
     engine.gravity.x = 0;
     engine.gravity.y = 1;
 
-    // Enable physics - gravity will take over
+    // Enable physics - pure vertical gravity will take over
     Body.setStatic(completeFishBody, false);
 
-    // Clear all velocity - let gravity work naturally from current position
+    // Clear all velocity - start from zero
     Body.setVelocity(completeFishBody, { x: 0, y: 0 });
 
-    // No rotation or angular velocity
-    Body.setAngle(completeFishBody, 0);
-    Body.setAngularVelocity(completeFishBody, 0);
-
-    console.log('Released (touch) - falling straight down with pure vertical gravity');
+    console.log('Released (touch) - falling straight down from current position');
 }
 
 // Start the application
