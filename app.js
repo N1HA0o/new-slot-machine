@@ -1562,13 +1562,9 @@ function initializeSlotMachine() {
         { type: 'fishHead', image: fishHeadImage, group: 'fish' }
     ];
 
-    // For hulie2, randomly select between two head images
-    const legoHeadChoice = (legoPersonHeadImage && legoPersonHeadImage.complete) ?
-        (Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage) : legoHeadImage;
-
     const legoImageMap = [
         { type: 'legoHair', image: legoHairImage, group: 'lego' },
-        { type: 'legoHead', image: legoHeadChoice, group: 'lego' },  // Random choice between two head images
+        { type: 'legoHead', image: legoHeadImage, group: 'lego' },  // Default head image
         { type: 'legoBody', image: legoBodyImage, group: 'lego' },
         { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
     ];
@@ -1615,6 +1611,11 @@ function initializeSlotMachine() {
                     partGroup = 'lego';
                     partType = legoImageMap[row].type;
                     partImage = legoImageMap[row].image;
+
+                    // For hulie2 (row 1), randomly select between two head images
+                    if (row === 1 && legoPersonHeadImage && legoPersonHeadImage.complete) {
+                        partImage = Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage;
+                    }
                 }
 
                 // Validate image reference
@@ -1724,13 +1725,9 @@ function updateSlotMachine() {
                             { type: 'fishHead', image: fishHeadImage, group: 'fish' }
                         ];
 
-                        // For hulie2, randomly select between two head images
-                        const legoHeadChoice = (legoPersonHeadImage && legoPersonHeadImage.complete) ?
-                            (Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage) : legoHeadImage;
-
                         const legoImageMap = [
                             { type: 'legoHair', image: legoHairImage, group: 'lego' },
-                            { type: 'legoHead', image: legoHeadChoice, group: 'lego' },
+                            { type: 'legoHead', image: legoHeadImage, group: 'lego' },
                             { type: 'legoBody', image: legoBodyImage, group: 'lego' },
                             { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
                         ];
@@ -1751,6 +1748,11 @@ function updateSlotMachine() {
                             square.partGroup = 'lego';
                             square.partType = legoImageMap[rowIndex].type;
                             square.partImage = legoImageMap[rowIndex].image;
+
+                            // For hulie2 (rowIndex 1), randomly select between two head images
+                            if (rowIndex === 1 && legoPersonHeadImage && legoPersonHeadImage.complete) {
+                                square.partImage = Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage;
+                            }
 
                             // Validate image reference
                             if (!square.partImage) {
@@ -1921,6 +1923,34 @@ function checkMatchingInWindow() {
             });
         }
     });
+
+    // If we already have a partial match, actively look for matching parts near the center line
+    // and lock them immediately for smoother gameplay
+    if (matchCount >= 2 && currentGroup) {
+        symbolsAtCenter.forEach(symbol => {
+            if (symbol.locked || !symbol.square || symbol.partGroup !== currentGroup) return;
+
+            // Check if this matching part is near the center line
+            const squareCenter = symbol.square.x + symbol.square.size / 2;
+            const distanceFromCenter = Math.abs(squareCenter - centerX);
+
+            // If within 60px of center (close enough), lock it immediately
+            if (distanceFromCenter < 60) {
+                console.log(`Auto-locking ${currentGroup} part at column ${symbol.columnIndex} (distance: ${Math.round(distanceFromCenter)}px)`);
+                lockColumnAtCenter(symbol.columnIndex, currentGroup);
+                matchCount++;
+
+                if (matchCount === 4) {
+                    playFullMatchAnimation();
+                    detectionWindowActive = false;
+                    detectionWindowStartTime = null;
+                    console.log('Full match! Closing detection window.');
+                } else {
+                    console.log(`Auto-locked! Now ${matchCount}/4 matched`);
+                }
+            }
+        });
+    }
 
     // Check for matches - look for fish group or lego group
     const fishSymbols = symbolsAtCenter.filter(s => s.partGroup === 'fish');
