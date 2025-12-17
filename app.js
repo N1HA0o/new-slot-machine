@@ -141,6 +141,9 @@ let completeFishBody = null;
 let completeFishImage = null;
 let isDraggingFish = false;
 let dragOffset = { x: 0, y: 0 };
+let isFallingManually = false;
+let fallSpeed = 0;
+let fallAcceleration = 0.5;  // Pixels per frame acceleration
 
 // Fish images for slot machine
 let fishHeadImage = null;
@@ -1083,7 +1086,7 @@ function drawCustom() {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';  // Black color
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Swipe Down!', centerX, arrowY - arrowSize);
+        ctx.fillText('Shake it!', centerX, arrowY - arrowSize);
 
         ctx.restore();
     }
@@ -2074,7 +2077,7 @@ function playFullMatchAnimation() {
     fullMatchComplete = true;
     showDownArrow = true;
     arrowAnimationTime = Date.now();
-    console.log('Show down arrow prompt - waiting for user to swipe down');
+    console.log('Show down arrow prompt - waiting for user to shake it');
 }
 
 // Combine parts into complete object (fish or lego)
@@ -2305,9 +2308,35 @@ function finishFishCombination() {
 function updateCompleteFish() {
     if (!completeFishBody) return;
 
+    // Manual falling system - completely controlled, no physics interference
+    if (isFallingManually) {
+        // Accelerate downward
+        fallSpeed += fallAcceleration;
+
+        // Get current position
+        const currentX = completeFishBody.position.x;
+        const currentY = completeFishBody.position.y;
+
+        // Move straight down - X stays exactly the same!
+        Body.setPosition(completeFishBody, {
+            x: currentX,  // NO horizontal movement at all
+            y: currentY + fallSpeed  // Only vertical movement
+        });
+
+        // Ensure absolutely no rotation
+        Body.setAngle(completeFishBody, 0);
+
+        // Debug log every 30 frames
+        if (Math.floor(currentY) % 30 === 0) {
+            console.log(`Falling: y=${currentY.toFixed(0)}, speed=${fallSpeed.toFixed(1)}`);
+        }
+    }
+
     // Check if fish fell off screen
     if (completeFishBody.position.y > canvas.height + 200) {
         console.log('Fish fell off screen - resetting game...');
+        isFallingManually = false;
+        fallSpeed = 0;
         resetGame();
     }
 }
@@ -2433,17 +2462,16 @@ function handleMouseUp(e) {
 
     isDraggingFish = false;
 
-    // Reset gravity to pure vertical (ignore device tilt)
-    engine.gravity.x = 0;
-    engine.gravity.y = 1;
+    // Start manual falling system - bypasses physics engine completely
+    isFallingManually = true;
+    fallSpeed = 0;  // Start from zero speed
 
-    // Enable physics - pure vertical gravity will take over
-    Body.setStatic(completeFishBody, false);
-
-    // Clear all velocity - start from zero
+    // Keep body static to prevent physics interference
+    Body.setStatic(completeFishBody, true);
     Body.setVelocity(completeFishBody, { x: 0, y: 0 });
+    Body.setAngularVelocity(completeFishBody, 0);
 
-    console.log('Released - falling straight down from current position');
+    console.log('Released - starting manual vertical fall from position:', completeFishBody.position);
 }
 
 function handleTouchStart(e) {
@@ -2494,17 +2522,16 @@ function handleTouchEnd(e) {
 
     isDraggingFish = false;
 
-    // Reset gravity to pure vertical (ignore device tilt)
-    engine.gravity.x = 0;
-    engine.gravity.y = 1;
+    // Start manual falling system - bypasses physics engine completely
+    isFallingManually = true;
+    fallSpeed = 0;  // Start from zero speed
 
-    // Enable physics - pure vertical gravity will take over
-    Body.setStatic(completeFishBody, false);
-
-    // Clear all velocity - start from zero
+    // Keep body static to prevent physics interference
+    Body.setStatic(completeFishBody, true);
     Body.setVelocity(completeFishBody, { x: 0, y: 0 });
+    Body.setAngularVelocity(completeFishBody, 0);
 
-    console.log('Released (touch) - falling straight down from current position');
+    console.log('Released (touch) - starting manual vertical fall from position:', completeFishBody.position);
 }
 
 // Start the application
