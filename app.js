@@ -144,12 +144,6 @@ let dragOffset = { x: 0, y: 0 };
 let lastDragPosition = { x: 0, y: 0, time: 0 };
 let dragVelocity = { x: 0, y: 0 };
 
-// Inertia swing system
-let isSwinging = false;
-let swingStartTime = 0;
-let swingInitialVelocity = { x: 0, y: 0 };
-let swingDuration = 0;  // Will be calculated based on velocity
-
 // Fish images for slot machine
 let fishHeadImage = null;
 let fishBody1Image = null;
@@ -2292,10 +2286,10 @@ function finishFishCombination() {
         objHeight,
         {
             isStatic: true,  // Stay in place - no gravity until dragged
-            density: 0.015,  // Heavy for realistic fall when released
-            friction: 0.1,  // Low friction to prevent sticking
-            frictionAir: 0.02,  // Slight air resistance for realistic fall
-            restitution: 0.3,
+            density: 0.025,  // Heavier for faster, more natural fall
+            friction: 0.05,  // Very low friction for smooth movement
+            frictionAir: 0.005,  // Minimal air resistance for smooth fall
+            restitution: 0,  // No bounce - stops immediately on impact
             render: { fillStyle: 'transparent' }
         }
     );
@@ -2309,54 +2303,15 @@ function finishFishCombination() {
     console.log(`completeFishBody exists: ${completeFishBody ? 'YES' : 'NO'}`);
 }
 
-// Update inertia swing animation
-function updateSwingAnimation() {
-    if (!isSwinging || !completeFishBody) return;
-
-    const elapsed = Date.now() - swingStartTime;
-    const progress = Math.min(elapsed / swingDuration, 1);
-
-    if (progress >= 1) {
-        // Swing complete - enable gravity
-        isSwinging = false;
-        Body.setStatic(completeFishBody, false);
-        console.log('Swing animation complete - gravity enabled');
-        return;
-    }
-
-    // Damping factor (exponential decay)
-    const damping = Math.exp(-progress * 4);  // Decays to ~2% by end
-
-    // Pendulum-like swing with sine wave
-    const frequency = 2;  // Number of swings
-    const swingFactor = Math.sin(progress * frequency * Math.PI * 2) * damping;
-
-    // Apply velocity with swing effect
-    const currentVelX = swingInitialVelocity.x * damping;
-    const currentVelY = swingInitialVelocity.y * damping;
-
-    // Add perpendicular swing motion (for left-right sway)
-    const swingOffsetX = swingInitialVelocity.y * swingFactor * 0.3;
-    const swingOffsetY = -swingInitialVelocity.x * swingFactor * 0.3;
-
-    // Calculate new position based on velocity
-    const dt = 16;  // Assume 60fps
-    const newX = completeFishBody.position.x + (currentVelX + swingOffsetX) * dt / 1000;
-    const newY = completeFishBody.position.y + (currentVelY + swingOffsetY) * dt / 1000;
-
-    Body.setPosition(completeFishBody, { x: newX, y: newY });
-
-    // Rotation follows horizontal movement
-    const rotationAngle = (currentVelX + swingOffsetX) * 0.0001;
-    Body.setAngle(completeFishBody, rotationAngle);
-}
-
 // Update complete fish interaction
 function updateCompleteFish() {
     if (!completeFishBody) return;
 
-    // Update swing animation if active
-    updateSwingAnimation();
+    // Ensure no rotation during physics
+    if (!isDraggingFish) {
+        Body.setAngle(completeFishBody, 0);
+        Body.setAngularVelocity(completeFishBody, 0);
+    }
 
     // Check if fish fell off screen
     if (completeFishBody.position.y > canvas.height + 200) {
@@ -2456,17 +2411,17 @@ function handleMouseDown(e) {
 
     if (distance < 150) {
         isDraggingFish = true;
-        isSwinging = false;  // Stop any swing animation
 
-        // Immediately move image center to finger position
-        Body.setPosition(completeFishBody, { x: mouseX, y: mouseY });
+        // Store the offset from touch point to image center
+        dragOffset.x = dx;
+        dragOffset.y = dy;
 
         lastDragPosition = { x: mouseX, y: mouseY, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
 
-        // Enable physics/inertia system when drag starts
-        Body.setStatic(completeFishBody, false);
-        console.log('Drag started - center follows finger');
+        // Keep static during drag to prevent jittering
+        Body.setStatic(completeFishBody, true);
+        console.log('Drag started - locked to finger');
     }
 }
 
@@ -2483,12 +2438,14 @@ function handleMouseMove(e) {
     dragVelocity.x = (mouseX - lastDragPosition.x) / dt * 1000;  // pixels per second
     dragVelocity.y = (mouseY - lastDragPosition.y) / dt * 1000;
 
-    // Calculate rotation based on horizontal movement (swaying effect)
-    const targetAngle = dragVelocity.x * 0.0001;  // Small multiplier for subtle sway
-    Body.setAngle(completeFishBody, targetAngle);
+    // Move image maintaining offset from finger
+    Body.setPosition(completeFishBody, {
+        x: mouseX - dragOffset.x,
+        y: mouseY - dragOffset.y
+    });
 
-    // Image center follows finger directly
-    Body.setPosition(completeFishBody, { x: mouseX, y: mouseY });
+    // Reset angle to 0 (no rotation)
+    Body.setAngle(completeFishBody, 0);
 
     lastDragPosition = { x: mouseX, y: mouseY, time: now };
 }
@@ -2498,22 +2455,21 @@ function handleMouseUp(e) {
 
     isDraggingFish = false;
 
-    // Start inertia swing system
-    const speed = Math.sqrt(dragVelocity.x * dragVelocity.x + dragVelocity.y * dragVelocity.y);
+    // Enable physics and apply velocity
+    Body.setStatic(completeFishBody, false);
 
-    if (speed > 50) {  // Only swing if velocity is significant
-        isSwinging = true;
-        swingStartTime = Date.now();
-        swingInitialVelocity = { x: dragVelocity.x, y: dragVelocity.y };
-        // Duration proportional to speed (faster = longer swing)
-        swingDuration = Math.min(speed * 3, 2000);  // Max 2 seconds
+    // Apply drag velocity for inertia (scaled down for smoothness)
+    const velocityScale = 0.5;
+    Body.setVelocity(completeFishBody, {
+        x: dragVelocity.x * velocityScale / 60,  // Convert to per-frame
+        y: dragVelocity.y * velocityScale / 60
+    });
 
-        console.log(`Started swing: velocity=(${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)}), duration=${swingDuration}ms`);
-    } else {
-        // If velocity is too low, just enable gravity
-        Body.setStatic(completeFishBody, false);
-        console.log('Released - too slow for swing, gravity enabled');
-    }
+    // No rotation
+    Body.setAngle(completeFishBody, 0);
+    Body.setAngularVelocity(completeFishBody, 0);
+
+    console.log(`Released - velocity: (${dragVelocity.x.toFixed(0)}, ${dragVelocity.y.toFixed(0)}) px/s`);
 }
 
 function handleTouchStart(e) {
@@ -2531,17 +2487,17 @@ function handleTouchStart(e) {
 
     if (distance < 150) {
         isDraggingFish = true;
-        isSwinging = false;  // Stop any swing animation
 
-        // Immediately move image center to finger position
-        Body.setPosition(completeFishBody, { x: touchX, y: touchY });
+        // Store the offset from touch point to image center
+        dragOffset.x = dx;
+        dragOffset.y = dy;
 
         lastDragPosition = { x: touchX, y: touchY, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
 
-        // Enable physics/inertia system when drag starts
-        Body.setStatic(completeFishBody, false);
-        console.log('Drag started (touch) - center follows finger');
+        // Keep static during drag to prevent jittering
+        Body.setStatic(completeFishBody, true);
+        console.log('Drag started (touch) - locked to finger');
     }
 }
 
@@ -2560,12 +2516,14 @@ function handleTouchMove(e) {
     dragVelocity.x = (touchX - lastDragPosition.x) / dt * 1000;  // pixels per second
     dragVelocity.y = (touchY - lastDragPosition.y) / dt * 1000;
 
-    // Calculate rotation based on horizontal movement (swaying effect)
-    const targetAngle = dragVelocity.x * 0.0001;  // Small multiplier for subtle sway
-    Body.setAngle(completeFishBody, targetAngle);
+    // Move image maintaining offset from finger
+    Body.setPosition(completeFishBody, {
+        x: touchX - dragOffset.x,
+        y: touchY - dragOffset.y
+    });
 
-    // Image center follows finger directly
-    Body.setPosition(completeFishBody, { x: touchX, y: touchY });
+    // Reset angle to 0 (no rotation)
+    Body.setAngle(completeFishBody, 0);
 
     lastDragPosition = { x: touchX, y: touchY, time: now };
 }
@@ -2576,22 +2534,21 @@ function handleTouchEnd(e) {
 
     isDraggingFish = false;
 
-    // Start inertia swing system
-    const speed = Math.sqrt(dragVelocity.x * dragVelocity.x + dragVelocity.y * dragVelocity.y);
+    // Enable physics and apply velocity
+    Body.setStatic(completeFishBody, false);
 
-    if (speed > 50) {  // Only swing if velocity is significant
-        isSwinging = true;
-        swingStartTime = Date.now();
-        swingInitialVelocity = { x: dragVelocity.x, y: dragVelocity.y };
-        // Duration proportional to speed (faster = longer swing)
-        swingDuration = Math.min(speed * 3, 2000);  // Max 2 seconds
+    // Apply drag velocity for inertia (scaled down for smoothness)
+    const velocityScale = 0.5;
+    Body.setVelocity(completeFishBody, {
+        x: dragVelocity.x * velocityScale / 60,  // Convert to per-frame
+        y: dragVelocity.y * velocityScale / 60
+    });
 
-        console.log(`Started swing (touch): velocity=(${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)}), duration=${swingDuration}ms`);
-    } else {
-        // If velocity is too low, just enable gravity
-        Body.setStatic(completeFishBody, false);
-        console.log('Released (touch) - too slow for swing, gravity enabled');
-    }
+    // No rotation
+    Body.setAngle(completeFishBody, 0);
+    Body.setAngularVelocity(completeFishBody, 0);
+
+    console.log(`Released (touch) - velocity: (${dragVelocity.x.toFixed(0)}, ${dragVelocity.y.toFixed(0)}) px/s`);
 }
 
 // Start the application
