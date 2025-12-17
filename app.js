@@ -144,6 +144,12 @@ let dragOffset = { x: 0, y: 0 };
 let lastDragPosition = { x: 0, y: 0, time: 0 };
 let dragVelocity = { x: 0, y: 0 };
 
+// Inertia swing system
+let isSwinging = false;
+let swingStartTime = 0;
+let swingInitialVelocity = { x: 0, y: 0 };
+let swingDuration = 0;  // Will be calculated based on velocity
+
 // Fish images for slot machine
 let fishHeadImage = null;
 let fishBody1Image = null;
@@ -2185,14 +2191,31 @@ function updateFishCombineAnimation() {
 
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
+    const partSize = 121.5;
 
-    // Phase 1 (0-30%): Only hulie4, 3, 2 move downward
-    if (progress < 0.3) {
-        const phaseProgress = progress / 0.3;
+    // Check if upper parts have touched edges
+    let upperPartsTouched = false;
+    if (fishPartBodies.length >= 4) {
+        // Check distance between adjacent parts (4-3, 3-2, 2-1)
+        const distances = [];
+        for (let i = 3; i >= 1; i--) {
+            const currentPart = fishPartBodies.find(p => p.index === i);
+            const belowPart = fishPartBodies.find(p => p.index === i - 1);
+            if (currentPart && belowPart) {
+                const dist = Math.abs(currentPart.body.position.y - belowPart.body.position.y);
+                distances.push(dist);
+            }
+        }
+        // If all adjacent parts are close (within partSize + small gap), they've touched
+        upperPartsTouched = distances.every(d => d < partSize + 20);
+    }
+
+    // Phase 1 (0-40% OR until edges touch): Only hulie4, 3, 2 move downward
+    if (progress < 0.4 && !upperPartsTouched) {
         fishPartBodies.forEach(part => {
             // Only apply downward force to indices 3, 2, 1 (hulie4, 3, 2)
             if (part.index === 3 || part.index === 2 || part.index === 1) {
-                const downwardForce = 0.015 * (1 - phaseProgress);  // Decreasing force
+                const downwardForce = 0.02;  // Constant downward force
                 Body.applyForce(part.body, part.body.position, {
                     x: 0,
                     y: downwardForce
@@ -2200,16 +2223,16 @@ function updateFishCombineAnimation() {
             }
         });
     }
-    // Phase 2 (30-100%): All 4 parts move toward center with spring force
+    // Phase 2 (after edges touch OR 40-100%): All 4 parts continuously converge to center
     else {
-        const phaseProgress = (progress - 0.3) / 0.7;
+        const phaseProgress = Math.max((progress - 0.4) / 0.6, 0);
 
         fishPartBodies.forEach(part => {
             const dx = centerX - part.body.position.x;
             const dy = centerY - part.body.position.y;
 
-            // Strong spring force with easing
-            const springStrength = 0.0003 * (1 + phaseProgress * 3);
+            // Continuous strong spring force pulling to center
+            const springStrength = 0.0004 * (1 + phaseProgress * 2);
             const forceX = dx * springStrength;
             const forceY = dy * springStrength;
 
@@ -2218,12 +2241,16 @@ function updateFishCombineAnimation() {
                 y: forceY
             });
 
-            // Damping for elastic bounce effect
+            // Damping for smooth convergence
             Body.setVelocity(part.body, {
-                x: part.body.velocity.x * 0.92,
-                y: part.body.velocity.y * 0.92
+                x: part.body.velocity.x * 0.9,
+                y: part.body.velocity.y * 0.9
             });
         });
+
+        if (upperPartsTouched && progress < 0.5) {
+            console.log('✓ Upper parts touched - now converging to center');
+        }
     }
 
     // Log progress periodically
@@ -2282,9 +2309,54 @@ function finishFishCombination() {
     console.log(`completeFishBody exists: ${completeFishBody ? 'YES' : 'NO'}`);
 }
 
+// Update inertia swing animation
+function updateSwingAnimation() {
+    if (!isSwinging || !completeFishBody) return;
+
+    const elapsed = Date.now() - swingStartTime;
+    const progress = Math.min(elapsed / swingDuration, 1);
+
+    if (progress >= 1) {
+        // Swing complete - enable gravity
+        isSwinging = false;
+        Body.setStatic(completeFishBody, false);
+        console.log('Swing animation complete - gravity enabled');
+        return;
+    }
+
+    // Damping factor (exponential decay)
+    const damping = Math.exp(-progress * 4);  // Decays to ~2% by end
+
+    // Pendulum-like swing with sine wave
+    const frequency = 2;  // Number of swings
+    const swingFactor = Math.sin(progress * frequency * Math.PI * 2) * damping;
+
+    // Apply velocity with swing effect
+    const currentVelX = swingInitialVelocity.x * damping;
+    const currentVelY = swingInitialVelocity.y * damping;
+
+    // Add perpendicular swing motion (for left-right sway)
+    const swingOffsetX = swingInitialVelocity.y * swingFactor * 0.3;
+    const swingOffsetY = -swingInitialVelocity.x * swingFactor * 0.3;
+
+    // Calculate new position based on velocity
+    const dt = 16;  // Assume 60fps
+    const newX = completeFishBody.position.x + (currentVelX + swingOffsetX) * dt / 1000;
+    const newY = completeFishBody.position.y + (currentVelY + swingOffsetY) * dt / 1000;
+
+    Body.setPosition(completeFishBody, { x: newX, y: newY });
+
+    // Rotation follows horizontal movement
+    const rotationAngle = (currentVelX + swingOffsetX) * 0.0001;
+    Body.setAngle(completeFishBody, rotationAngle);
+}
+
 // Update complete fish interaction
 function updateCompleteFish() {
     if (!completeFishBody) return;
+
+    // Update swing animation if active
+    updateSwingAnimation();
 
     // Check if fish fell off screen
     if (completeFishBody.position.y > canvas.height + 200) {
@@ -2384,13 +2456,17 @@ function handleMouseDown(e) {
 
     if (distance < 150) {
         isDraggingFish = true;
-        dragOffset.x = dx;
-        dragOffset.y = dy;
-        lastDragPosition = { x: completeFishBody.position.x, y: completeFishBody.position.y, time: Date.now() };
+        isSwinging = false;  // Stop any swing animation
+
+        // Immediately move image center to finger position
+        Body.setPosition(completeFishBody, { x: mouseX, y: mouseY });
+
+        lastDragPosition = { x: mouseX, y: mouseY, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
+
         // Enable physics/inertia system when drag starts
         Body.setStatic(completeFishBody, false);
-        console.log('Drag started - inertia system enabled');
+        console.log('Drag started - center follows finger');
     }
 }
 
@@ -2401,41 +2477,43 @@ function handleMouseMove(e) {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const newX = mouseX - dragOffset.x;
-    const newY = mouseY - dragOffset.y;
-
     // Calculate velocity for physics feedback
     const now = Date.now();
     const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
-    dragVelocity.x = (newX - completeFishBody.position.x) / dt * 16;  // Convert to per-frame velocity
-    dragVelocity.y = (newY - completeFishBody.position.y) / dt * 16;
+    dragVelocity.x = (mouseX - lastDragPosition.x) / dt * 1000;  // pixels per second
+    dragVelocity.y = (mouseY - lastDragPosition.y) / dt * 1000;
 
     // Calculate rotation based on horizontal movement (swaying effect)
-    const horizontalVelocity = dragVelocity.x;
-    const targetAngle = horizontalVelocity * 0.002;  // Small multiplier for subtle sway
+    const targetAngle = dragVelocity.x * 0.0001;  // Small multiplier for subtle sway
     Body.setAngle(completeFishBody, targetAngle);
 
-    Body.setPosition(completeFishBody, { x: newX, y: newY });
+    // Image center follows finger directly
+    Body.setPosition(completeFishBody, { x: mouseX, y: mouseY });
 
-    lastDragPosition = { x: newX, y: newY, time: now };
+    lastDragPosition = { x: mouseX, y: mouseY, time: now };
 }
 
 function handleMouseUp(e) {
     if (!isDraggingFish || !completeFishBody) return;
 
     isDraggingFish = false;
-    Body.setStatic(completeFishBody, false);
 
-    // Apply the drag velocity for throwing effect
-    Body.setVelocity(completeFishBody, {
-        x: dragVelocity.x * 0.3,  // Scale down for more realistic feel
-        y: dragVelocity.y * 0.3
-    });
+    // Start inertia swing system
+    const speed = Math.sqrt(dragVelocity.x * dragVelocity.x + dragVelocity.y * dragVelocity.y);
 
-    // Apply angular velocity based on horizontal movement
-    Body.setAngularVelocity(completeFishBody, dragVelocity.x * 0.0005);
+    if (speed > 50) {  // Only swing if velocity is significant
+        isSwinging = true;
+        swingStartTime = Date.now();
+        swingInitialVelocity = { x: dragVelocity.x, y: dragVelocity.y };
+        // Duration proportional to speed (faster = longer swing)
+        swingDuration = Math.min(speed * 3, 2000);  // Max 2 seconds
 
-    console.log(`Released with velocity: (${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)})`);
+        console.log(`Started swing: velocity=(${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)}), duration=${swingDuration}ms`);
+    } else {
+        // If velocity is too low, just enable gravity
+        Body.setStatic(completeFishBody, false);
+        console.log('Released - too slow for swing, gravity enabled');
+    }
 }
 
 function handleTouchStart(e) {
@@ -2453,13 +2531,17 @@ function handleTouchStart(e) {
 
     if (distance < 150) {
         isDraggingFish = true;
-        dragOffset.x = dx;
-        dragOffset.y = dy;
-        lastDragPosition = { x: completeFishBody.position.x, y: completeFishBody.position.y, time: Date.now() };
+        isSwinging = false;  // Stop any swing animation
+
+        // Immediately move image center to finger position
+        Body.setPosition(completeFishBody, { x: touchX, y: touchY });
+
+        lastDragPosition = { x: touchX, y: touchY, time: Date.now() };
         dragVelocity = { x: 0, y: 0 };
+
         // Enable physics/inertia system when drag starts
         Body.setStatic(completeFishBody, false);
-        console.log('Drag started (touch) - inertia system enabled');
+        console.log('Drag started (touch) - center follows finger');
     }
 }
 
@@ -2472,23 +2554,20 @@ function handleTouchMove(e) {
     const touchX = touch.clientX - rect.left;
     const touchY = touch.clientY - rect.top;
 
-    const newX = touchX - dragOffset.x;
-    const newY = touchY - dragOffset.y;
-
     // Calculate velocity for physics feedback
     const now = Date.now();
     const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
-    dragVelocity.x = (newX - completeFishBody.position.x) / dt * 16;  // Convert to per-frame velocity
-    dragVelocity.y = (newY - completeFishBody.position.y) / dt * 16;
+    dragVelocity.x = (touchX - lastDragPosition.x) / dt * 1000;  // pixels per second
+    dragVelocity.y = (touchY - lastDragPosition.y) / dt * 1000;
 
     // Calculate rotation based on horizontal movement (swaying effect)
-    const horizontalVelocity = dragVelocity.x;
-    const targetAngle = horizontalVelocity * 0.002;  // Small multiplier for subtle sway
+    const targetAngle = dragVelocity.x * 0.0001;  // Small multiplier for subtle sway
     Body.setAngle(completeFishBody, targetAngle);
 
-    Body.setPosition(completeFishBody, { x: newX, y: newY });
+    // Image center follows finger directly
+    Body.setPosition(completeFishBody, { x: touchX, y: touchY });
 
-    lastDragPosition = { x: newX, y: newY, time: now };
+    lastDragPosition = { x: touchX, y: touchY, time: now };
 }
 
 function handleTouchEnd(e) {
@@ -2496,18 +2575,23 @@ function handleTouchEnd(e) {
     e.preventDefault();
 
     isDraggingFish = false;
-    Body.setStatic(completeFishBody, false);
 
-    // Apply the drag velocity for throwing effect
-    Body.setVelocity(completeFishBody, {
-        x: dragVelocity.x * 0.3,  // Scale down for more realistic feel
-        y: dragVelocity.y * 0.3
-    });
+    // Start inertia swing system
+    const speed = Math.sqrt(dragVelocity.x * dragVelocity.x + dragVelocity.y * dragVelocity.y);
 
-    // Apply angular velocity based on horizontal movement
-    Body.setAngularVelocity(completeFishBody, dragVelocity.x * 0.0005);
+    if (speed > 50) {  // Only swing if velocity is significant
+        isSwinging = true;
+        swingStartTime = Date.now();
+        swingInitialVelocity = { x: dragVelocity.x, y: dragVelocity.y };
+        // Duration proportional to speed (faster = longer swing)
+        swingDuration = Math.min(speed * 3, 2000);  // Max 2 seconds
 
-    console.log(`Released with velocity: (${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)})`);
+        console.log(`Started swing (touch): velocity=(${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)}), duration=${swingDuration}ms`);
+    } else {
+        // If velocity is too low, just enable gravity
+        Body.setStatic(completeFishBody, false);
+        console.log('Released (touch) - too slow for swing, gravity enabled');
+    }
 }
 
 // Start the application
