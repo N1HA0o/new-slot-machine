@@ -2227,6 +2227,7 @@ function finishFishCombination() {
         objWidth,
         objHeight,
         {
+            isStatic: true,  // Stay at center until user drags
             density: 0.001,
             friction: 0.8,
             restitution: 0.3,
