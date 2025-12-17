@@ -388,7 +388,14 @@ function handleMotion(event) {
         // Threshold for downward swipe (negative Y is down in device coordinates)
         if (accelChange < -10) {  // Strong downward acceleration
             console.log('Down swipe detected! Combining fish parts...');
-            combineFishParts();
+            try {
+                combineFishParts();
+            } catch (error) {
+                console.error('Error in combineFishParts:', error);
+                // Reset to prevent white screen
+                fishCombineAnimationActive = false;
+                showDownArrow = true;
+            }
         }
     }
 
@@ -1090,11 +1097,11 @@ function drawCustom() {
         const objWidth = 300;
         const objHeight = 200;
 
-        // Draw shadow
+        // Draw shadow (reduced by 30%)
         ctx.save();
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.beginPath();
-        ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2, 30, 0, 0, Math.PI * 2);
+        ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2 * 0.7, 21, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
@@ -1612,9 +1619,9 @@ function initializeSlotMachine() {
                     partType = legoImageMap[row].type;
                     partImage = legoImageMap[row].image;
 
-                    // For hulie2 (row 1), randomly select between two head images
+                    // For hulie2 (row 1), only use legoPersonHeadImage (乐高人头)
                     if (row === 1 && legoPersonHeadImage && legoPersonHeadImage.complete) {
-                        partImage = Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage;
+                        partImage = legoPersonHeadImage;
                     }
                 }
 
@@ -1749,9 +1756,9 @@ function updateSlotMachine() {
                             square.partType = legoImageMap[rowIndex].type;
                             square.partImage = legoImageMap[rowIndex].image;
 
-                            // For hulie2 (rowIndex 1), randomly select between two head images
+                            // For hulie2 (rowIndex 1), only use legoPersonHeadImage (乐高人头)
                             if (rowIndex === 1 && legoPersonHeadImage && legoPersonHeadImage.complete) {
-                                square.partImage = Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage;
+                                square.partImage = legoPersonHeadImage;
                             }
 
                             // Validate image reference
@@ -2076,8 +2083,19 @@ function combineFishParts() {
 
     if (!currentGroup) {
         console.error('No current group set! Cannot combine parts.');
+        showDownArrow = true;  // Keep showing arrow for retry
         return;
     }
+
+    // Verify we have 4 locked columns
+    const lockedCount = lockedColumns.filter(locked => locked).length;
+    if (lockedCount !== 4) {
+        console.error(`Only ${lockedCount} columns locked, need 4! Cannot combine.`);
+        showDownArrow = true;  // Keep showing arrow for retry
+        return;
+    }
+
+    console.log('✓ All validations passed, starting combination animation...');
 
     // Hide down arrow
     showDownArrow = false;
@@ -2163,6 +2181,14 @@ function updateFishCombineAnimation() {
 
     const elapsed = Date.now() - fishCombineStartTime;
     const progress = Math.min(elapsed / fishCombineDuration, 1);
+
+    // Validate fishPartBodies array
+    if (!fishPartBodies || fishPartBodies.length === 0) {
+        console.error('No fish part bodies found during animation!');
+        fishCombineAnimationActive = false;
+        showDownArrow = true;
+        return;
+    }
 
     // Apply spring force to pull all parts toward center
     const centerX = canvas.width / 2;
@@ -2370,7 +2396,7 @@ function handleMouseUp(e) {
 
     isDraggingFish = false;
     Body.setStatic(completeFishBody, false);
-    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
+    // Don't reset velocity - let gravity take over naturally
 }
 
 function handleTouchStart(e) {
@@ -2415,7 +2441,7 @@ function handleTouchEnd(e) {
 
     isDraggingFish = false;
     Body.setStatic(completeFishBody, false);
-    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
+    // Don't reset velocity - let gravity take over naturally
 }
 
 // Start the application
