@@ -151,6 +151,7 @@ let fishTailImage = null;
 // Lego person images for slot machine
 let legoHairImage = null;
 let legoHeadImage = null;
+let legoPersonHeadImage = null;  // Alternative head image
 let legoBodyImage = null;
 let legoLegsImage = null;
 
@@ -222,6 +223,15 @@ function loadImages() {
         console.log('  Dimensions:', legoHeadImage.width, 'x', legoHeadImage.height);
     };
     legoHeadImage.onerror = () => console.error('✗ Failed to load: 乐高头.png');
+
+    // Load alternative lego person head image
+    legoPersonHeadImage = new Image();
+    legoPersonHeadImage.src = '乐高人头.png';
+    legoPersonHeadImage.onload = () => {
+        console.log('✓ Lego person head image loaded (hulie2 alternative)');
+        console.log('  Dimensions:', legoPersonHeadImage.width, 'x', legoPersonHeadImage.height);
+    };
+    legoPersonHeadImage.onerror = () => console.error('✗ Failed to load: 乐高人头.png');
 
     legoBodyImage = new Image();
     legoBodyImage.src = '乐高身体.png';
@@ -1552,9 +1562,13 @@ function initializeSlotMachine() {
         { type: 'fishHead', image: fishHeadImage, group: 'fish' }
     ];
 
+    // For hulie2, randomly select between two head images
+    const legoHeadChoice = (legoPersonHeadImage && legoPersonHeadImage.complete) ?
+        (Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage) : legoHeadImage;
+
     const legoImageMap = [
         { type: 'legoHair', image: legoHairImage, group: 'lego' },
-        { type: 'legoHead', image: legoHeadImage, group: 'lego' },
+        { type: 'legoHead', image: legoHeadChoice, group: 'lego' },  // Random choice between two head images
         { type: 'legoBody', image: legoBodyImage, group: 'lego' },
         { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
     ];
@@ -1687,17 +1701,36 @@ function updateSlotMachine() {
                     square.hasPart = Math.random() < partProbability;
 
                     if (square.hasPart) {
-                        // Randomly select fish or lego group (50/50)
-                        const isFish = Math.random() < 0.5;
+                        // If there's a partial match, favor the matched group (70% chance)
+                        // Otherwise 50/50 between fish and lego
+                        let isFish;
+                        if (matchCount >= 2 && currentGroup) {
+                            // Partial match exists - favor current group
+                            if (currentGroup === 'fish') {
+                                isFish = Math.random() < 0.7;  // 70% chance for fish
+                            } else {
+                                isFish = Math.random() < 0.3;  // 30% chance for fish (70% for lego)
+                            }
+                            console.log(`Partial match bonus: generating ${isFish ? 'fish' : 'lego'} (current group: ${currentGroup})`);
+                        } else {
+                            // No partial match - 50/50
+                            isFish = Math.random() < 0.5;
+                        }
+
                         const fishImageMap = [
                             { type: 'fishTail', image: fishTailImage, group: 'fish' },
                             { type: 'fishBody2', image: fishBody2Image, group: 'fish' },
                             { type: 'fishBody1', image: fishBody1Image, group: 'fish' },
                             { type: 'fishHead', image: fishHeadImage, group: 'fish' }
                         ];
+
+                        // For hulie2, randomly select between two head images
+                        const legoHeadChoice = (legoPersonHeadImage && legoPersonHeadImage.complete) ?
+                            (Math.random() < 0.5 ? legoHeadImage : legoPersonHeadImage) : legoHeadImage;
+
                         const legoImageMap = [
                             { type: 'legoHair', image: legoHairImage, group: 'lego' },
-                            { type: 'legoHead', image: legoHeadImage, group: 'lego' },
+                            { type: 'legoHead', image: legoHeadChoice, group: 'lego' },
                             { type: 'legoBody', image: legoBodyImage, group: 'lego' },
                             { type: 'legoLegs', image: legoLegsImage, group: 'lego' }
                         ];
@@ -1929,9 +1962,17 @@ function checkMatchingInWindow() {
             // Update match count
             matchCount = newMatchCount;
 
-            // Close detection window after successful match
-            detectionWindowActive = false;
-            detectionWindowStartTime = null;
+            // Don't close detection window for partial matches - keep checking!
+            // Only close if we got full match (all 4) or window naturally expires
+            if (matchCount === 4) {
+                // Full match - close detection window
+                detectionWindowActive = false;
+                detectionWindowStartTime = null;
+                console.log('Full match! Closing detection window.');
+            } else {
+                // Partial match - keep detection window open for more matches
+                console.log(`Partial match (${matchCount}/4) - detection window stays open`);
+            }
 
             // Play match animation
             if (matchCount === 4) {
