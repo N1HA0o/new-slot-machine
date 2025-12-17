@@ -141,6 +141,8 @@ let completeFishBody = null;
 let completeFishImage = null;
 let isDraggingFish = false;
 let dragOffset = { x: 0, y: 0 };
+let lastDragPosition = { x: 0, y: 0, time: 0 };
+let dragVelocity = { x: 0, y: 0 };
 
 // Fish images for slot machine
 let fishHeadImage = null;
@@ -1097,11 +1099,11 @@ function drawCustom() {
         const objWidth = 300;
         const objHeight = 200;
 
-        // Draw shadow (reduced by 30%)
+        // Draw shadow (reduced by 51% total: 0.7 * 0.7 = 0.49)
         ctx.save();
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.beginPath();
-        ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2 * 0.7, 21, 0, 0, Math.PI * 2);
+        ctx.ellipse(objX, objY + objHeight/2 + 20, objWidth/2 * 0.49, 14.7, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
@@ -2254,8 +2256,9 @@ function finishFishCombination() {
         objHeight,
         {
             isStatic: true,  // Stay at center until user drags
-            density: 0.001,
-            friction: 0.8,
+            density: 0.01,  // Increased from 0.001 for better gravity effect
+            friction: 0.1,  // Reduced from 0.8 to prevent sticking
+            frictionAir: 0.01,  // Low air resistance
             restitution: 0.3,
             render: { fillStyle: 'transparent' }
         }
@@ -2374,6 +2377,8 @@ function handleMouseDown(e) {
         isDraggingFish = true;
         dragOffset.x = dx;
         dragOffset.y = dy;
+        lastDragPosition = { x: mouseX, y: mouseY, time: Date.now() };
+        dragVelocity = { x: 0, y: 0 };
         Body.setStatic(completeFishBody, true);
     }
 }
@@ -2385,10 +2390,23 @@ function handleMouseMove(e) {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    Body.setPosition(completeFishBody, {
-        x: mouseX - dragOffset.x,
-        y: mouseY - dragOffset.y
-    });
+    const newX = mouseX - dragOffset.x;
+    const newY = mouseY - dragOffset.y;
+
+    // Calculate velocity for physics feedback
+    const now = Date.now();
+    const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
+    dragVelocity.x = (newX - completeFishBody.position.x) / dt * 16;  // Convert to per-frame velocity
+    dragVelocity.y = (newY - completeFishBody.position.y) / dt * 16;
+
+    // Calculate rotation based on horizontal movement (swaying effect)
+    const horizontalVelocity = dragVelocity.x;
+    const targetAngle = horizontalVelocity * 0.002;  // Small multiplier for subtle sway
+    Body.setAngle(completeFishBody, targetAngle);
+
+    Body.setPosition(completeFishBody, { x: newX, y: newY });
+
+    lastDragPosition = { x: newX, y: newY, time: now };
 }
 
 function handleMouseUp(e) {
@@ -2396,7 +2414,17 @@ function handleMouseUp(e) {
 
     isDraggingFish = false;
     Body.setStatic(completeFishBody, false);
-    // Don't reset velocity - let gravity take over naturally
+
+    // Apply the drag velocity for throwing effect
+    Body.setVelocity(completeFishBody, {
+        x: dragVelocity.x * 0.3,  // Scale down for more realistic feel
+        y: dragVelocity.y * 0.3
+    });
+
+    // Apply angular velocity based on horizontal movement
+    Body.setAngularVelocity(completeFishBody, dragVelocity.x * 0.0005);
+
+    console.log(`Released with velocity: (${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)})`);
 }
 
 function handleTouchStart(e) {
@@ -2416,6 +2444,8 @@ function handleTouchStart(e) {
         isDraggingFish = true;
         dragOffset.x = dx;
         dragOffset.y = dy;
+        lastDragPosition = { x: touchX, y: touchY, time: Date.now() };
+        dragVelocity = { x: 0, y: 0 };
         Body.setStatic(completeFishBody, true);
     }
 }
@@ -2429,10 +2459,23 @@ function handleTouchMove(e) {
     const touchX = touch.clientX - rect.left;
     const touchY = touch.clientY - rect.top;
 
-    Body.setPosition(completeFishBody, {
-        x: touchX - dragOffset.x,
-        y: touchY - dragOffset.y
-    });
+    const newX = touchX - dragOffset.x;
+    const newY = touchY - dragOffset.y;
+
+    // Calculate velocity for physics feedback
+    const now = Date.now();
+    const dt = Math.max(now - lastDragPosition.time, 1);  // Avoid division by zero
+    dragVelocity.x = (newX - completeFishBody.position.x) / dt * 16;  // Convert to per-frame velocity
+    dragVelocity.y = (newY - completeFishBody.position.y) / dt * 16;
+
+    // Calculate rotation based on horizontal movement (swaying effect)
+    const horizontalVelocity = dragVelocity.x;
+    const targetAngle = horizontalVelocity * 0.002;  // Small multiplier for subtle sway
+    Body.setAngle(completeFishBody, targetAngle);
+
+    Body.setPosition(completeFishBody, { x: newX, y: newY });
+
+    lastDragPosition = { x: newX, y: newY, time: now };
 }
 
 function handleTouchEnd(e) {
@@ -2441,7 +2484,17 @@ function handleTouchEnd(e) {
 
     isDraggingFish = false;
     Body.setStatic(completeFishBody, false);
-    // Don't reset velocity - let gravity take over naturally
+
+    // Apply the drag velocity for throwing effect
+    Body.setVelocity(completeFishBody, {
+        x: dragVelocity.x * 0.3,  // Scale down for more realistic feel
+        y: dragVelocity.y * 0.3
+    });
+
+    // Apply angular velocity based on horizontal movement
+    Body.setAngularVelocity(completeFishBody, dragVelocity.x * 0.0005);
+
+    console.log(`Released with velocity: (${dragVelocity.x.toFixed(2)}, ${dragVelocity.y.toFixed(2)})`);
 }
 
 // Start the application
