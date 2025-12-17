@@ -1018,6 +1018,18 @@ function drawCustom() {
             ctx.setLineDash([]);  // Reset dash
         }
 
+        // Draw "spin forward" text when slot machine is active but user hasn't flipped yet
+        if (slotMachineActive && !firstFlipTriggered) {
+            const centerY = canvas.height / 2;
+            const textX = canvas.width / 4;  // Position on the left side along the center line
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('spin forward', textX, centerY);
+        }
+
         ctx.restore();
     }
 
