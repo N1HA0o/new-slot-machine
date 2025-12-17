@@ -113,7 +113,7 @@ let flipStartTime = 0;
 let flipAccelDuration = 300;  // 0.3 seconds acceleration
 let flipPeakDuration = 500;  // 0.5 seconds at peak speed
 let flipDecelDuration = 1300;  // 1.3 seconds deceleration (extended 30%)
-let detectionDelayAfterFlip = 1400;  // 1.4 seconds after flip starts
+let detectionDelayAfterFlip = 500;  // 0.5 seconds after flip starts (easier to match)
 
 // Slot machine game mechanics
 let firstFlipTriggered = false;  // Track if first flip has occurred
@@ -959,7 +959,7 @@ function drawCustom() {
                                     square.size
                                 );
                             } catch (e) {
-                                console.error('Error drawing image:', square.partType, e);
+                                console.error(`Error drawing image: ${square.partGroup}/${square.partType} at row ${rowIdx}`, e);
                                 // Draw placeholder on error
                                 ctx.fillStyle = 'rgba(200, 200, 200, 0.5)';
                                 ctx.fillRect(square.x + 5, squareY + 5, square.size - 10, square.size - 10);
@@ -971,6 +971,11 @@ function drawCustom() {
                             ctx.strokeStyle = '#999999';
                             ctx.lineWidth = 2;
                             ctx.strokeRect(square.x + 5, squareY + 5, square.size - 10, square.size - 10);
+
+                            // Log loading issues for lego head specifically
+                            if (square.partType === 'legoHead') {
+                                console.warn('Lego head image still loading or invalid');
+                            }
                         }
                     }
                 }
@@ -1600,8 +1605,12 @@ function initializeSlotMachine() {
 
                 // Validate image reference
                 if (!partImage) {
-                    console.error(`Missing image for ${partGroup} ${partType} at row ${row}`);
+                    console.error(`Init: Missing image for ${partGroup} ${partType} at row ${row}`);
                     hasPart = false;  // Don't create part if image is missing
+                    partType = null;
+                    partGroup = null;
+                } else if (partType === 'legoHead') {
+                    console.log(`✓ Created lego head at row ${row}, image loaded: ${partImage.complete}`);
                 }
             }
 
@@ -1618,6 +1627,21 @@ function initializeSlotMachine() {
 
         columns.push(column);
     }
+
+    // Summary: count parts by type
+    let legoHeadCount = 0;
+    let totalParts = 0;
+    columns.forEach(column => {
+        column.squares.forEach(square => {
+            if (square.hasPart) {
+                totalParts++;
+                if (square.partType === 'legoHead') {
+                    legoHeadCount++;
+                }
+            }
+        });
+    });
+    console.log(`Initialized ${totalParts} parts total, including ${legoHeadCount} lego heads`);
 }
 
 // Update slot machine animation (horizontal movement)
@@ -1685,8 +1709,10 @@ function updateSlotMachine() {
 
                             // Validate image reference
                             if (!square.partImage) {
-                                console.error(`Regenerate: Missing fish image at row ${rowIndex}`);
+                                console.error(`Regenerate: Missing fish image at row ${rowIndex}, type: ${fishImageMap[rowIndex].type}`);
                                 square.hasPart = false;
+                                square.partType = null;
+                                square.partGroup = null;
                             }
                         } else {
                             square.partGroup = 'lego';
@@ -1695,8 +1721,12 @@ function updateSlotMachine() {
 
                             // Validate image reference
                             if (!square.partImage) {
-                                console.error(`Regenerate: Missing lego image at row ${rowIndex}`);
+                                console.error(`Regenerate: Missing lego image at row ${rowIndex}, type: ${legoImageMap[rowIndex].type}`);
                                 square.hasPart = false;
+                                square.partType = null;
+                                square.partGroup = null;
+                            } else if (square.partType === 'legoHead') {
+                                console.log(`✓ Regenerated lego head at row ${rowIndex}, image loaded: ${square.partImage.complete}`);
                             }
                         }
                     } else {
@@ -1766,11 +1796,11 @@ function updateFlipPhysics() {
     const decelStart = flipAccelDuration + flipPeakDuration;
     const inDecelPhase = elapsed >= decelStart;
 
-    // Start detection window 1.4 seconds after flip (during deceleration phase)
+    // Start detection window 0.5 seconds after flip (during acceleration/peak phase)
     if (elapsed >= detectionDelayAfterFlip && !detectionWindowActive && firstFlipTriggered && !fullMatchComplete) {
         detectionWindowActive = true;
         detectionWindowStartTime = Date.now();
-        console.log('Detection window started (1.8s) at 1.4s after flip - checking for matches...');
+        console.log('Detection window started (1.8s) at 0.5s after flip - checking for matches...');
     }
 
     columns.forEach((column, idx) => {
