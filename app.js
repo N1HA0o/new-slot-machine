@@ -2162,16 +2162,6 @@ function combineFishParts() {
         });
 
         console.log(`Created physics body for ${lockedSquare.partType} at column ${idx}`);
-
-        // Apply downward force to hulie3, hulie2, hulie1 (indices 2, 1, 0)
-        if (idx === 0 || idx === 1 || idx === 2) {
-            const downwardForce = 0.008;
-            Body.applyForce(partBody, partBody.position, {
-                x: 0,
-                y: downwardForce
-            });
-            console.log(`Applied downward force to ${lockedSquare.partType}`);
-        }
     });
 
     console.log(`${currentGroup} parts created (${fishPartBodies.length} bodies) - starting combination animation...`);
@@ -2182,7 +2172,8 @@ function updateFishCombineAnimation() {
     if (!fishCombineAnimationActive) return;
 
     const elapsed = Date.now() - fishCombineStartTime;
-    const progress = Math.min(elapsed / fishCombineDuration, 1);
+    const totalDuration = 2000;  // Increased to 2 seconds for clearer phases
+    const progress = Math.min(elapsed / totalDuration, 1);
 
     // Validate fishPartBodies array
     if (!fishPartBodies || fishPartBodies.length === 0) {
@@ -2192,30 +2183,48 @@ function updateFishCombineAnimation() {
         return;
     }
 
-    // Apply spring force to pull all parts toward center
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
 
-    fishPartBodies.forEach(part => {
-        const dx = centerX - part.body.position.x;
-        const dy = centerY - part.body.position.y;
-
-        // Spring force - stronger as time progresses
-        const springStrength = 0.0001 * (1 + progress * 2);
-        const forceX = dx * springStrength;
-        const forceY = dy * springStrength;
-
-        Body.applyForce(part.body, part.body.position, {
-            x: forceX,
-            y: forceY
+    // Phase 1 (0-30%): Only hulie1, 2, 3 move downward
+    if (progress < 0.3) {
+        const phaseProgress = progress / 0.3;
+        fishPartBodies.forEach(part => {
+            // Only apply downward force to indices 0, 1, 2 (hulie1, 2, 3)
+            if (part.index === 0 || part.index === 1 || part.index === 2) {
+                const downwardForce = 0.015 * (1 - phaseProgress);  // Decreasing force
+                Body.applyForce(part.body, part.body.position, {
+                    x: 0,
+                    y: downwardForce
+                });
+            }
         });
+    }
+    // Phase 2 (30-100%): All 4 parts move toward center with spring force
+    else {
+        const phaseProgress = (progress - 0.3) / 0.7;
 
-        // Add damping to prevent too much oscillation
-        Body.setVelocity(part.body, {
-            x: part.body.velocity.x * 0.95,
-            y: part.body.velocity.y * 0.95
+        fishPartBodies.forEach(part => {
+            const dx = centerX - part.body.position.x;
+            const dy = centerY - part.body.position.y;
+
+            // Strong spring force with easing
+            const springStrength = 0.0003 * (1 + phaseProgress * 3);
+            const forceX = dx * springStrength;
+            const forceY = dy * springStrength;
+
+            Body.applyForce(part.body, part.body.position, {
+                x: forceX,
+                y: forceY
+            });
+
+            // Damping for elastic bounce effect
+            Body.setVelocity(part.body, {
+                x: part.body.velocity.x * 0.92,
+                y: part.body.velocity.y * 0.92
+            });
         });
-    });
+    }
 
     // Log progress periodically
     if (Math.floor(progress * 10) !== Math.floor((progress - 0.01) * 10)) {
@@ -2255,10 +2264,10 @@ function finishFishCombination() {
         objWidth,
         objHeight,
         {
-            isStatic: true,  // Stay at center until user drags
-            density: 0.01,  // Increased from 0.001 for better gravity effect
-            friction: 0.1,  // Reduced from 0.8 to prevent sticking
-            frictionAir: 0.01,  // Low air resistance
+            isStatic: false,  // Enable gravity immediately - will fall if not dragged
+            density: 0.015,  // Heavy enough to fall naturally
+            friction: 0.1,  // Low friction to prevent sticking
+            frictionAir: 0.02,  // Slight air resistance for realistic fall
             restitution: 0.3,
             render: { fillStyle: 'transparent' }
         }
