@@ -2455,21 +2455,21 @@ function handleMouseUp(e) {
 
     isDraggingFish = false;
 
-    // Enable physics and apply velocity
+    // Reset gravity to pure vertical (ignore device tilt)
+    engine.gravity.x = 0;
+    engine.gravity.y = 1;
+
+    // Enable physics - gravity will take over
     Body.setStatic(completeFishBody, false);
 
-    // Apply drag velocity for inertia (scaled down for smoothness)
-    const velocityScale = 0.5;
-    Body.setVelocity(completeFishBody, {
-        x: dragVelocity.x * velocityScale / 60,  // Convert to per-frame
-        y: dragVelocity.y * velocityScale / 60
-    });
+    // Clear all velocity - let gravity work naturally from current position
+    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
 
-    // No rotation
+    // No rotation or angular velocity
     Body.setAngle(completeFishBody, 0);
     Body.setAngularVelocity(completeFishBody, 0);
 
-    console.log(`Released - velocity: (${dragVelocity.x.toFixed(0)}, ${dragVelocity.y.toFixed(0)}) px/s`);
+    console.log('Released - falling straight down with pure vertical gravity');
 }
 
 function handleTouchStart(e) {
@@ -2534,21 +2534,21 @@ function handleTouchEnd(e) {
 
     isDraggingFish = false;
 
-    // Enable physics and apply velocity
+    // Reset gravity to pure vertical (ignore device tilt)
+    engine.gravity.x = 0;
+    engine.gravity.y = 1;
+
+    // Enable physics - gravity will take over
     Body.setStatic(completeFishBody, false);
 
-    // Apply drag velocity for inertia (scaled down for smoothness)
-    const velocityScale = 0.5;
-    Body.setVelocity(completeFishBody, {
-        x: dragVelocity.x * velocityScale / 60,  // Convert to per-frame
-        y: dragVelocity.y * velocityScale / 60
-    });
+    // Clear all velocity - let gravity work naturally from current position
+    Body.setVelocity(completeFishBody, { x: 0, y: 0 });
 
-    // No rotation
+    // No rotation or angular velocity
     Body.setAngle(completeFishBody, 0);
     Body.setAngularVelocity(completeFishBody, 0);
 
-    console.log(`Released (touch) - velocity: (${dragVelocity.x.toFixed(0)}, ${dragVelocity.y.toFixed(0)}) px/s`);
+    console.log('Released (touch) - falling straight down with pure vertical gravity');
 }
 
 // Start the application
